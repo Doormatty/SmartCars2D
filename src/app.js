@@ -23,7 +23,7 @@
     return { x: v.x, y: v.y };
   }
 
-  var TWO_PI = 2 * Math.PI;
+  let TWO_PI = 2 * Math.PI;
 
   function bodyHandle(entity) {
     return entity && entity.body ? entity.body : entity;
@@ -42,7 +42,7 @@
   }
 
   function transformPoint(transform, point) {
-    var angle = transform.angle || 0;
+    let angle = transform.angle || 0;
     return transformPointWithTrig(transform, point, Math.cos(angle), Math.sin(angle));
   }
 
@@ -82,27 +82,27 @@
       }, generator));
     },
     createNormals(prop, generator) {
-      var l = prop.length;
-      var values = new Array(l);
-      for (var i = 0; i < l; i++) {
+      let l = prop.length;
+      let values = new Array(l);
+      for (let i = 0; i < l; i++) {
         values[i] = createNormal(prop, generator);
       }
       return values;
     },
     mapToShuffle(prop, normals) {
-      var offset = prop.offset || 0;
-      var limit = prop.limit || prop.length;
-      var sorted = normals.slice().sort(function (a, b) {
+      let offset = prop.offset || 0;
+      let limit = prop.limit || prop.length;
+      let sorted = normals.slice().sort(function (a, b) {
         return a - b;
       });
-      var rankByValue = new Map();
-      for (var i = 0; i < sorted.length; i++) {
+      let rankByValue = new Map();
+      for (let i = 0; i < sorted.length; i++) {
         if (!rankByValue.has(sorted[i])) {
           rankByValue.set(sorted[i], i + offset);
         }
       }
-      var values = new Array(Math.min(limit, normals.length));
-      for (i = 0; i < values.length; i++) {
+      let values = new Array(Math.min(limit, normals.length));
+      for (let i = 0; i < values.length; i++) {
         values[i] = rankByValue.get(normals[i]);
       }
       return values;
@@ -113,8 +113,8 @@
         range: prop.range || 10,
         length: prop.length
       }
-      var values = random.mapToFloat(prop, normals);
-      for (var i = 0; i < values.length; i++) {
+      let values = random.mapToFloat(prop, normals);
+      for (let i = 0; i < values.length; i++) {
         values[i] = Math.round(values[i]);
       }
       return values;
@@ -124,27 +124,27 @@
         min: prop.min || 0,
         range: prop.range || 1
       }
-      var min = prop.min;
-      var range = prop.range;
-      var values = new Array(normals.length);
-      for (var i = 0; i < normals.length; i++) {
+      let min = prop.min;
+      let range = prop.range;
+      let values = new Array(normals.length);
+      for (let i = 0; i < normals.length; i++) {
         values[i] = min + normals[i] * range;
       }
       return values;
     },
     mutateReplace(prop, generator, originalValues, mutation_range, chanceToMutate) {
-      var factor = (prop.factor || 1) * mutation_range;
-      var values = new Array(originalValues.length);
-      for (var i = 0; i < originalValues.length; i++) {
-        var originalValue = originalValues[i];
+      let factor = (prop.factor || 1) * mutation_range;
+      let values = new Array(originalValues.length);
+      for (let i = 0; i < originalValues.length; i++) {
+        let originalValue = originalValues[i];
         if (generator() > chanceToMutate) {
           values[i] = originalValue;
           continue;
         }
 
         // Calculate bounds based on the factor, centered around the original value
-        var minBound = Math.max(0, originalValue - (factor / 2));
-        var maxBound = Math.min(1, originalValue + (factor / 2));
+        let minBound = Math.max(0, originalValue - (factor / 2));
+        let maxBound = Math.min(1, originalValue + (factor / 2));
 
         // Pick a completely random flat value within those bounds
         // Fallback to 0-1 if factor is >= 1 (100% mutation size)
@@ -153,7 +153,7 @@
           maxBound = 1;
         }
 
-        var rangeValue = createNormal({ inclusive: true }, generator);
+        let rangeValue = createNormal({ inclusive: true }, generator);
         // Map [0, 1] to [minBound, maxBound]
         values[i] = minBound + (rangeValue * (maxBound - minBound));
       }
@@ -179,37 +179,37 @@ function createNormal(prop, generator) {
    * ------------------------------------------------------------------------- */
 
 
-  var createInstance = {
+  let createInstance = {
     createGenerationZero(schema, generator) {
-      var instance = { id: Math.random().toString(32) };
-      var keys = Object.keys(schema);
-      for (var i = 0; i < keys.length; i++) {
-        var key = keys[i];
-        var schemaProp = schema[key];
+      let instance = { id: Math.random().toString(32) };
+      let keys = Object.keys(schema);
+      for (let i = 0; i < keys.length; i++) {
+        let key = keys[i];
+        let schemaProp = schema[key];
         instance[key] = random.createNormals(schemaProp, generator);
       }
       return instance;
     },
     createCrossBreed(schema, parents, parentChooser) {
-      var id = Math.random().toString(32);
-      var ancestry = new Array(parents.length);
-      for (var i = 0; i < parents.length; i++) {
+      let id = Math.random().toString(32);
+      let ancestry = new Array(parents.length);
+      for (let i = 0; i < parents.length; i++) {
         ancestry[i] = {
           id: parents[i].id,
           ancestry: parents[i].ancestry,
         };
       }
-      var crossDef = {
+      let crossDef = {
         id: id,
         ancestry: ancestry
       };
-      var keys = Object.keys(schema);
-      for (var keyIndex = 0; keyIndex < keys.length; keyIndex++) {
-        var key = keys[keyIndex];
-        var schemaDef = schema[key];
-        var values = new Array(schemaDef.length);
-        for (var valueIndex = 0, l = schemaDef.length; valueIndex < l; valueIndex++) {
-          var p = parentChooser(id, key, parents);
+      let keys = Object.keys(schema);
+      for (let keyIndex = 0; keyIndex < keys.length; keyIndex++) {
+        let key = keys[keyIndex];
+        let schemaDef = schema[key];
+        let values = new Array(schemaDef.length);
+        for (let valueIndex = 0, l = schemaDef.length; valueIndex < l; valueIndex++) {
+          let p = parentChooser(id, key, parents);
           values[valueIndex] = parents[p][key][valueIndex];
         }
         crossDef[key] = values;
@@ -217,16 +217,16 @@ function createNormal(prop, generator) {
       return crossDef;
     },
     createMutatedClone(schema, generator, parent, factor, chanceToMutate) {
-      var mutateFn = random.mutateReplace;
-      var clone = {
+      let mutateFn = random.mutateReplace;
+      let clone = {
         id: parent.id,
         ancestry: parent.ancestry
       };
-      var keys = Object.keys(schema);
-      for (var i = 0; i < keys.length; i++) {
-        var key = keys[i];
-        var schemaProp = schema[key];
-        var originalValues = parent[key];
+      let keys = Object.keys(schema);
+      for (let i = 0; i < keys.length; i++) {
+        let key = keys[i];
+        let schemaProp = schema[key];
+        let originalValues = parent[key];
         clone[key] = mutateFn(
           schemaProp, generator, originalValues, factor, chanceToMutate
         );
@@ -234,16 +234,16 @@ function createNormal(prop, generator) {
       return clone;
     },
     applyTypes(schema, parent) {
-      var clone = {
+      let clone = {
         id: parent.id,
         ancestry: parent.ancestry
       };
-      var keys = Object.keys(schema);
-      for (var i = 0; i < keys.length; i++) {
-        var key = keys[i];
-        var schemaProp = schema[key];
-        var originalValues = parent[key];
-        var values;
+      let keys = Object.keys(schema);
+      for (let i = 0; i < keys.length; i++) {
+        let key = keys[i];
+        let schemaProp = schema[key];
+        let originalValues = parent[key];
+        let values;
         switch (schemaProp.type) {
           case "shuffle":
             values = random.mapToShuffle(schemaProp, originalValues); break;
@@ -264,7 +264,7 @@ function createNormal(prop, generator) {
   /* -------------------------------------------------------------------------
    * car-schema/car-constants.json (inlined)
    * ------------------------------------------------------------------------- */
-  var carConstantsData = {
+  let carConstantsData = {
     "wheelCount": 2,
     "wheelMinRadius": 0.2,
     "wheelRadiusRange": 0.5,
@@ -280,11 +280,11 @@ function createNormal(prop, generator) {
    * car-schema/construct.js
    * ------------------------------------------------------------------------- */
 
-  var carConstruct = (function () {
-    var carConstants = carConstantsData;
+  let carConstruct = (function () {
+    let carConstants = carConstantsData;
 
     function worldDef() {
-      var box2dfps = 60;
+      let box2dfps = 60;
       return {
         gravity: { y: 0 }, doSleep: true, floorseed: "abc",
         maxFloorTiles: 200, mutable_floor: false, motorSpeed: 20,
@@ -310,15 +310,15 @@ function createNormal(prop, generator) {
    * car-schema/def-to-car.js
    * ------------------------------------------------------------------------- */
   function defToCar(normal_def, world, constants) {
-    var car_def = createInstance.applyTypes(constants.schema, normal_def)
-    var instance = {};
+    let car_def = createInstance.applyTypes(constants.schema, normal_def)
+    let instance = {};
     instance.joints = [];
     instance.chassis = createChassis(
       world, car_def.vertex_list, car_def.chassis_density
     );
-    var i;
+    let i;
 
-    var wheelCount = car_def.wheel_radius.length;
+    let wheelCount = car_def.wheel_radius.length;
 
     instance.wheels = [];
     for (i = 0; i < wheelCount; i++) {
@@ -329,15 +329,15 @@ function createNormal(prop, generator) {
       );
     }
 
-    var carmass = b2.getBodyMass(instance.chassis.body);
+    let carmass = b2.getBodyMass(instance.chassis.body);
     for (i = 0; i < wheelCount; i++) {
       carmass += b2.getBodyMass(instance.wheels[i].body);
     }
 
     for (i = 0; i < wheelCount; i++) {
-      var torque = carmass * -constants.gravity.y / car_def.wheel_radius[i];
+      let torque = carmass * -constants.gravity.y / car_def.wheel_radius[i];
 
-      var randvertex = instance.chassis.vertex_list[car_def.wheel_vertex[i]];
+      let randvertex = instance.chassis.vertex_list[car_def.wheel_vertex[i]];
       b2.setBodyTransform(instance.wheels[i].body, {
         position: getWorldPoint(instance.chassis, randvertex),
         angle: 0,
@@ -362,7 +362,7 @@ function createNormal(prop, generator) {
 
   function createChassis(world, vertexs, density) {
 
-    var vertex_list = [
+    let vertex_list = [
       vec2(vertexs[0], 0),
       vec2(vertexs[1], vertexs[2]),
       vec2(0, vertexs[3]),
@@ -373,7 +373,7 @@ function createNormal(prop, generator) {
       vec2(vertexs[10], -vertexs[11])
     ];
 
-    var chassis = {
+    let chassis = {
       body: b2.createBody(world, {
         type: b2.dynamicBody,
         position: vec2(0.0, 4.0),
@@ -396,12 +396,12 @@ function createNormal(prop, generator) {
 
 
   function createChassisPart(chassis, vertex1, vertex2, density) {
-    var vertex_list = [
+    let vertex_list = [
       cloneVec2(vertex1),
       cloneVec2(vertex2),
       vec2(0, 0)
     ];
-    var shape = b2.createPolygonShape(chassis.body, {
+    let shape = b2.createPolygonShape(chassis.body, {
       vertices: vertex_list,
       density: density,
       friction: 10,
@@ -417,12 +417,12 @@ function createNormal(prop, generator) {
   }
 
   function createWheel(world, radius, density) {
-    var body = b2.createBody(world, {
+    let body = b2.createBody(world, {
       type: b2.dynamicBody,
       position: vec2(0, 0),
     });
-    var center = vec2(0, 0);
-    var shape = b2.createCircleShape(body, {
+    let center = vec2(0, 0);
+    let shape = b2.createCircleShape(body, {
       center: center,
       radius: radius,
       density: density,
@@ -446,7 +446,7 @@ function createNormal(prop, generator) {
    * ------------------------------------------------------------------------- */
 
 
-  var carRun = {
+  let carRun = {
     getInitialState: getInitialState,
     updateState: updateState,
     getStatus: getStatus,
@@ -472,9 +472,9 @@ function createNormal(prop, generator) {
     }
 
     // check health
-    var position = getBodyPosition(worldConstruct.chassis);
+    let position = getBodyPosition(worldConstruct.chassis);
     // check if car reached end of the path
-    var nextState = {
+    let nextState = {
       frames: state.frames + 1,
       maxPositionx: position.x > state.maxPositionx ? position.x : state.maxPositionx,
       maxPositiony: position.y > state.maxPositiony ? position.y : state.maxPositiony,
@@ -511,9 +511,9 @@ function createNormal(prop, generator) {
   }
 
   function calculateScore(state, constants) {
-    var avgspeed = (state.maxPositionx / state.frames) * constants.box2dfps;
-    var position = state.maxPositionx;
-    var score = position + avgspeed;
+    let avgspeed = (state.maxPositionx / state.frames) * constants.box2dfps;
+    let position = state.maxPositionx;
+    let score = position + avgspeed;
     return {
       v: score,
       s: avgspeed,
@@ -529,9 +529,9 @@ function createNormal(prop, generator) {
    * ------------------------------------------------------------------------- */
 
   function flatRankSelect(parents) {
-    var totalParents = parents.length;
-    var parentIndex = -1;
-    for (var k = 0; k < totalParents; k++) {
+    let totalParents = parents.length;
+    let parentIndex = -1;
+    for (let k = 0; k < totalParents; k++) {
       if (Math.random() <= 0.2) {
         parentIndex = k;
         break;
@@ -547,7 +547,7 @@ function createNormal(prop, generator) {
   /* -------------------------------------------------------------------------
    * generation-config/pickParent.js
    * ------------------------------------------------------------------------- */
-  var nAttributes = 15;
+  let nAttributes = 15;
 
 
   function pickParent(currentChoices, chooseId, key /* , parents */) {
@@ -555,16 +555,16 @@ function createNormal(prop, generator) {
       currentChoices.set(chooseId, initializePick())
     }
 
-    var state = currentChoices.get(chooseId);
+    let state = currentChoices.get(chooseId);
     state.i++
     state.curparent = cw_chooseParent(state);
     return state.curparent;
 
     function cw_chooseParent(state) {
-      var curparent = state.curparent;
-      var attributeIndex = state.i;
-      var swapPoint1 = state.swapPoint1
-      var swapPoint2 = state.swapPoint2
+      let curparent = state.curparent;
+      let attributeIndex = state.i;
+      let swapPoint1 = state.swapPoint1
+      let swapPoint2 = state.swapPoint2
       if ((swapPoint1 == attributeIndex) || (swapPoint2 == attributeIndex)) {
         return curparent == 1 ? 0 : 1
       }
@@ -572,14 +572,14 @@ function createNormal(prop, generator) {
     }
 
     function initializePick() {
-      var curparent = 0;
+      let curparent = 0;
 
-      var swapPoint1 = Math.floor(Math.random() * (nAttributes));
-      var swapPoint2 = swapPoint1;
+      let swapPoint1 = Math.floor(Math.random() * (nAttributes));
+      let swapPoint2 = swapPoint1;
       while (swapPoint2 == swapPoint1) {
         swapPoint2 = Math.floor(Math.random() * (nAttributes));
       }
-      var i = 0;
+      let i = 0;
       return {
         curparent: curparent,
         i: i,
@@ -604,15 +604,15 @@ function createNormal(prop, generator) {
    * generation-config/index.js
    * ------------------------------------------------------------------------- */
 
-  var generationConfig = (function () {
-    var carConstants = carConstruct.carConstants();
-    var schema = carConstruct.generateSchema(carConstants);
-    var constants = {
+  let generationConfig = (function () {
+    let carConstants = carConstruct.carConstants();
+    let schema = carConstruct.generateSchema(carConstants);
+    let constants = {
       generationSize: 20, schema: schema, championLength: 1,
       mutation_range: 1, gen_mutation: 0.05
     };
-    var fn = function () {
-      var currentChoices = new Map();
+    let fn = function () {
+      let currentChoices = new Map();
       return Object.assign({}, constants, {
         selectFromAllParents: flatRankSelect,
         generateRandom: generateRandom,
@@ -627,17 +627,17 @@ function createNormal(prop, generator) {
   /* -------------------------------------------------------------------------
    * machine-learning/genetic-algorithm/manage-round.js
    * ------------------------------------------------------------------------- */
-  var manageRound = (function () {
-    var create = createInstance;
+  let manageRound = (function () {
+    let create = createInstance;
 
 
 
     function generationZero(config) {
-      var generationSize = config.generationSize,
+      let generationSize = config.generationSize,
         schema = config.schema;
-      var cw_carGeneration = [];
-      for (var k = 0; k < generationSize; k++) {
-        var def = create.createGenerationZero(schema, function () {
+      let cw_carGeneration = [];
+      for (let k = 0; k < generationSize; k++) {
+        let def = create.createGenerationZero(schema, function () {
           return Math.random()
         });
         def.index = k;
@@ -654,25 +654,25 @@ function createNormal(prop, generator) {
       scores,
       config
     ) {
-      var champion_length = config.championLength,
+      let champion_length = config.championLength,
         generationSize = config.generationSize,
         selectFromAllParents = config.selectFromAllParents;
 
-      var newGeneration = new Array(generationSize);
-      var newborn;
-      for (var k = 0; k < champion_length; k++) {
+      let newGeneration = new Array(generationSize);
+      let newborn;
+      for (let k = 0; k < champion_length; k++) {
         scores[k].def.is_elite = true;
         scores[k].def.index = k;
         newGeneration[k] = scores[k].def;
       }
-      var parentList = [];
-      for (k = champion_length; k < generationSize; k++) {
-        var parent1 = selectFromAllParents(scores, parentList);
-        var parent2 = parent1;
+      let parentList = [];
+      for (let k = champion_length; k < generationSize; k++) {
+        let parent1 = selectFromAllParents(scores, parentList);
+        let parent2 = parent1;
         while (parent2 == parent1) {
           parent2 = selectFromAllParents(scores, parentList, parent1);
         }
-        var pair = [parent1, parent2]
+        let pair = [parent1, parent2]
         parentList.push(pair);
         newborn = makeChild(config, [scores[parent1].def, scores[parent2].def]);
         newborn = mutate(config, newborn);
@@ -689,14 +689,14 @@ function createNormal(prop, generator) {
 
 
     function makeChild(config, parents) {
-      var schema = config.schema,
+      let schema = config.schema,
         pickParent = config.pickParent;
       return create.createCrossBreed(schema, parents, pickParent)
     }
 
 
     function mutate(config, parent) {
-      var schema = config.schema,
+      let schema = config.schema,
         mutation_range = config.mutation_range,
         gen_mutation = config.gen_mutation,
         generateRandom = config.generateRandom;
@@ -716,18 +716,18 @@ function createNormal(prop, generator) {
   /* -------------------------------------------------------------------------
    * machine-learning/simulated-annealing/manage-round.js
    * ------------------------------------------------------------------------- */
-  var manageRoundSA = (function () {
-    var create = createInstance;
+  let manageRoundSA = (function () {
+    let create = createInstance;
 
 
 
     function generationZero(config) {
-      var oldStructure = create.createGenerationZero(
+      let oldStructure = create.createGenerationZero(
         config.schema, config.generateRandom
       );
-      var newStructure = createStructure(config, 1, oldStructure);
+      let newStructure = createStructure(config, 1, oldStructure);
 
-      var k = 0;
+      let k = 0;
 
       return {
         counter: 0,
@@ -737,21 +737,21 @@ function createNormal(prop, generator) {
     }
 
     function nextGeneration(previousState, scores, config) {
-      var nextState = {
+      let nextState = {
         k: (previousState.k + 1) % config.generationSize,
         counter: previousState.counter + (previousState.k === config.generationSize ? 1 : 0)
       };
       // gradually get closer to zero temperature (but never hit it)
-      var oldDef = previousState.curDef || previousState.generation[1];
-      var oldScore = previousState.score || scores[1].score.v;
+      let oldDef = previousState.curDef || previousState.generation[1];
+      let oldScore = previousState.score || scores[1].score.v;
 
-      var newDef = previousState.generation[0];
-      var newScore = scores[0].score.v;
+      let newDef = previousState.generation[0];
+      let newScore = scores[0].score.v;
 
 
-      var temp = Math.pow(Math.E, -nextState.counter / config.generationSize);
+      let temp = Math.pow(Math.E, -nextState.counter / config.generationSize);
 
-      var scoreDiff = newScore - oldScore;
+      let scoreDiff = newScore - oldScore;
       // If the next point is higher, change location
       if (scoreDiff > 0) {
         nextState.curDef = newDef;
@@ -773,7 +773,7 @@ function createNormal(prop, generator) {
 
 
     function createStructure(config, mutation_range, parent) {
-      var schema = config.schema,
+      let schema = config.schema,
         gen_mutation = 1,
         generateRandom = config.generateRandom;
       return create.createMutatedClone(
@@ -794,13 +794,13 @@ function createNormal(prop, generator) {
    * ------------------------------------------------------------------------- */
 
   function ghost_get_frame(car) {
-    var out = {
+    let out = {
       chassis: ghost_get_chassis(car.chassis),
       wheels: [],
       pos: getBodyPosition(car.chassis)
     };
 
-    for (var i = 0; i < car.wheels.length; i++) {
+    for (let i = 0; i < car.wheels.length; i++) {
       out.wheels[i] = ghost_get_wheel(car.wheels[i]);
     }
 
@@ -808,21 +808,21 @@ function createNormal(prop, generator) {
   }
 
   function ghost_get_chassis(c) {
-    var gc = new Array(c.triangles.length);
-    var transform = getBodyTransform(c);
-    var angle = transform.angle || 0;
-    var cos = Math.cos(angle);
-    var sin = Math.sin(angle);
+    let gc = new Array(c.triangles.length);
+    let transform = getBodyTransform(c);
+    let angle = transform.angle || 0;
+    let cos = Math.cos(angle);
+    let sin = Math.sin(angle);
 
-    for (var t = 0; t < c.triangles.length; t++) {
-      var triangle = c.triangles[t];
-      var vertices = triangle.vertices;
-      var p = {
+    for (let t = 0; t < c.triangles.length; t++) {
+      let triangle = c.triangles[t];
+      let vertices = triangle.vertices;
+      let p = {
         vtx: new Array(vertices.length),
         num: vertices.length
       };
 
-      for (var i = 0; i < vertices.length; i++) {
+      for (let i = 0; i < vertices.length; i++) {
         p.vtx[i] = transformPointWithTrig(transform, vertices[i], cos, sin);
       }
 
@@ -833,9 +833,9 @@ function createNormal(prop, generator) {
   }
 
   function ghost_get_wheel(w) {
-    var gw = [];
-    var transform = getBodyTransform(w);
-    var angle = transform.angle || 0;
+    let gw = [];
+    let transform = getBodyTransform(w);
+    let angle = transform.angle || 0;
 
     gw.push({
       pos: w.center.x === 0 && w.center.y === 0
@@ -852,8 +852,8 @@ function createNormal(prop, generator) {
   /* -------------------------------------------------------------------------
    * ghost/index.js
    * ------------------------------------------------------------------------- */
-  var ghost_fns = (function () {
-    var enable_ghost = true;
+  let ghost_fns = (function () {
+    let enable_ghost = true;
 
 
 
@@ -910,7 +910,7 @@ function createNormal(prop, generator) {
         return;
       if (ghost.replay == null)
         return;
-      var frame = ghost.replay.frames[ghost.frame];
+      let frame = ghost.replay.frames[ghost.frame];
       if (!frame) return;
       return frame.pos;
     }
@@ -948,13 +948,13 @@ function createNormal(prop, generator) {
       if (replay == null)
         return;
 
-      var frame = ghost_get_frame(car);
+      let frame = ghost_get_frame(car);
       replay.frames.push(frame);
       replay.num_frames++;
     }
 
     function ghost_draw_frame(ctx, ghost, camera) {
-      var zoom = camera.zoom;
+      let zoom = camera.zoom;
       if (!enable_ghost)
         return;
       if (ghost == null)
@@ -964,7 +964,7 @@ function createNormal(prop, generator) {
       if (ghost.replay == null)
         return;
 
-      var frame = ghost.replay.frames[ghost.frame];
+      let frame = ghost.replay.frames[ghost.frame];
       if (!frame) return;
 
       // wheel style
@@ -972,8 +972,8 @@ function createNormal(prop, generator) {
       ctx.strokeStyle = "#8fa4a3";
       ctx.lineWidth = 1 / zoom;
 
-      for (var i = 0; i < frame.wheels.length; i++) {
-        var wheelFrame = frame.wheels[i][0];
+      for (let i = 0; i < frame.wheels.length; i++) {
+        let wheelFrame = frame.wheels[i][0];
         ghost_draw_circle(ctx, wheelFrame.pos, wheelFrame.rad, wheelFrame.ang);
       }
 
@@ -982,7 +982,7 @@ function createNormal(prop, generator) {
       ctx.fillStyle = "#dfe8e7";
       ctx.lineWidth = 1 / zoom;
       ctx.beginPath();
-      for (var c = 0; c < frame.chassis.length; c++) {
+      for (let c = 0; c < frame.chassis.length; c++) {
         ghost_draw_poly(ctx, frame.chassis[c].vtx, frame.chassis[c].num);
       }
       ctx.fill();
@@ -991,7 +991,7 @@ function createNormal(prop, generator) {
 
     function ghost_draw_poly(ctx, vtx, n_vtx) {
       ctx.moveTo(vtx[0].x, vtx[0].y);
-      for (var i = 1; i < n_vtx; i++) {
+      for (let i = 1; i < n_vtx; i++) {
         ctx.lineTo(vtx[i].x, vtx[i].y);
       }
       ctx.lineTo(vtx[0].x, vtx[0].y);
@@ -1027,20 +1027,20 @@ function createNormal(prop, generator) {
     // set strokestyle and fillstyle before call
     // call beginPath before call
 
-    var p0 = transformPointWithTrig(transform, vtx[0], cos, sin);
+    let p0 = transformPointWithTrig(transform, vtx[0], cos, sin);
     ctx.moveTo(p0.x, p0.y);
-    for (var i = 1; i < n_vtx; i++) {
-      var p = transformPointWithTrig(transform, vtx[i], cos, sin);
+    for (let i = 1; i < n_vtx; i++) {
+      let p = transformPointWithTrig(transform, vtx[i], cos, sin);
       ctx.lineTo(p.x, p.y);
     }
     ctx.lineTo(p0.x, p0.y);
   }
 
   function cw_drawWorldPoly(ctx, vtx, n_vtx) {
-    var p0 = vtx[0];
+    let p0 = vtx[0];
     ctx.moveTo(p0.x, p0.y);
-    for (var i = 1; i < n_vtx; i++) {
-      var p = vtx[i];
+    for (let i = 1; i < n_vtx; i++) {
+      let p = vtx[i];
       ctx.lineTo(p.x, p.y);
     }
     ctx.lineTo(p0.x, p0.y);
@@ -1054,7 +1054,7 @@ function createNormal(prop, generator) {
 
 
   function cw_drawCircle(ctx, transform, center, radius, angle, color) {
-    var p = center.x === 0 && center.y === 0
+    let p = center.x === 0 && center.y === 0
       ? transform.position
       : transformPoint(transform, center);
     ctx.fillStyle = color;
@@ -1075,14 +1075,14 @@ function createNormal(prop, generator) {
    * ------------------------------------------------------------------------- */
 
   function cw_drawFloor(ctx, camera, cw_floorTiles) {
-    var camera_x = camera.pos.x;
-    var zoom = camera.zoom;
+    let camera_x = camera.pos.x;
+    let zoom = camera.zoom;
     ctx.strokeStyle = "#17212b";
     ctx.fillStyle = "#8d9a96";
     ctx.lineWidth = 1 / zoom;
     ctx.beginPath();
 
-    var k;
+    let k;
     if (camera.pos.x - 10 > 0) {
       k = Math.floor((camera.pos.x - 10) / 1.5);
     } else {
@@ -1092,8 +1092,8 @@ function createNormal(prop, generator) {
 
     outer_loop:
     for (k; k < cw_floorTiles.length; k++) {
-      var b = cw_floorTiles[k];
-      var shapePosition = b.worldVertices[0].x;
+      let b = cw_floorTiles[k];
+      let shapePosition = b.worldVertices[0].x;
       if ((shapePosition > (camera_x - 5)) && (shapePosition < (camera_x + 10))) {
         cw_drawWorldPoly(ctx, b.worldVertices, b.worldVertices.length);
       }
@@ -1119,15 +1119,15 @@ function createNormal(prop, generator) {
    * ------------------------------------------------------------------------- */
 
 
-  var graph_fns = {
+  let graph_fns = {
     plotGraphs: function (graphElem, topScoresElem, scatterPlotElem, lastState, scores, config) {
       lastState = lastState || {};
-      var generationSize = scores.length
-      var graphcanvas = graphElem;
-      var graphctx = graphcanvas.getContext("2d");
-      var graphwidth = 400;
-      var graphheight = 250;
-      var nextState = cw_storeGraphScores(
+      let generationSize = scores.length
+      let graphcanvas = graphElem;
+      let graphctx = graphcanvas.getContext("2d");
+      let graphwidth = 400;
+      let graphheight = 250;
+      let nextState = cw_storeGraphScores(
         lastState, scores, generationSize
       );
       cw_clearGraphics(graphcanvas, graphctx, graphwidth, graphheight);
@@ -1157,36 +1157,36 @@ function createNormal(prop, generator) {
   }
 
   function cw_plotTop(state, graphctx) {
-    var cw_graphTop = state.cw_graphTop;
-    var graphsize = cw_graphTop.length;
+    let cw_graphTop = state.cw_graphTop;
+    let graphsize = cw_graphTop.length;
     graphctx.strokeStyle = "#d94f45";
     graphctx.beginPath();
     graphctx.moveTo(0, 0);
-    for (var k = 0; k < graphsize; k++) {
+    for (let k = 0; k < graphsize; k++) {
       graphctx.lineTo(400 * (k + 1) / graphsize, cw_graphTop[k]);
     }
     graphctx.stroke();
   }
 
   function cw_plotElite(state, graphctx) {
-    var cw_graphElite = state.cw_graphElite;
-    var graphsize = cw_graphElite.length;
+    let cw_graphElite = state.cw_graphElite;
+    let graphsize = cw_graphElite.length;
     graphctx.strokeStyle = "#2f8a4c";
     graphctx.beginPath();
     graphctx.moveTo(0, 0);
-    for (var k = 0; k < graphsize; k++) {
+    for (let k = 0; k < graphsize; k++) {
       graphctx.lineTo(400 * (k + 1) / graphsize, cw_graphElite[k]);
     }
     graphctx.stroke();
   }
 
   function cw_plotAverage(state, graphctx) {
-    var cw_graphAverage = state.cw_graphAverage;
-    var graphsize = cw_graphAverage.length;
+    let cw_graphAverage = state.cw_graphAverage;
+    let graphsize = cw_graphAverage.length;
     graphctx.strokeStyle = "#2563eb";
     graphctx.beginPath();
     graphctx.moveTo(0, 0);
-    for (var k = 0; k < graphsize; k++) {
+    for (let k = 0; k < graphsize; k++) {
       graphctx.lineTo(400 * (k + 1) / graphsize, cw_graphAverage[k]);
     }
     graphctx.stroke();
@@ -1194,16 +1194,16 @@ function createNormal(prop, generator) {
 
 
   function cw_eliteaverage(scores, generationSize) {
-    var sum = 0;
-    for (var k = 0; k < Math.floor(generationSize / 2); k++) {
+    let sum = 0;
+    for (let k = 0; k < Math.floor(generationSize / 2); k++) {
       sum += scores[k].score.v;
     }
     return sum / Math.floor(generationSize / 2);
   }
 
   function cw_average(scores, generationSize) {
-    var sum = 0;
-    for (var k = 0; k < generationSize; k++) {
+    let sum = 0;
+    for (let k = 0; k < generationSize; k++) {
       sum += scores[k].score.v;
     }
     return sum / generationSize;
@@ -1226,7 +1226,7 @@ function createNormal(prop, generator) {
   }
 
   function cw_listTopScores(elem, state) {
-    var cw_topScores = state.cw_topScores.slice().sort(function (a, b) {
+    let cw_topScores = state.cw_topScores.slice().sort(function (a, b) {
       if (a.v > b.v) {
         return -1
       } else {
@@ -1234,14 +1234,14 @@ function createNormal(prop, generator) {
       }
     });
 
-    var rows = ["<b>Top Scores</b><br />"];
-    for (var k = 0; k < Math.min(10, cw_topScores.length); k++) {
-      var topScore = cw_topScores[k];
-      var n = "#" + (k + 1) + ":";
-      var score = Math.round(topScore.v * 100) / 100;
-      var distance = "d:" + Math.round(topScore.x * 100) / 100;
-      var yrange = "h:" + Math.round(topScore.y2 * 100) / 100 + "/" + Math.round(topScore.y * 100) / 100 + "m";
-      var gen = "(Gen " + cw_topScores[k].i + ")"
+    let rows = ["<b>Top Scores</b><br />"];
+    for (let k = 0; k < Math.min(10, cw_topScores.length); k++) {
+      let topScore = cw_topScores[k];
+      let n = "#" + (k + 1) + ":";
+      let score = Math.round(topScore.v * 100) / 100;
+      let distance = "d:" + Math.round(topScore.x * 100) / 100;
+      let yrange = "h:" + Math.round(topScore.y2 * 100) / 100 + "/" + Math.round(topScore.y * 100) / 100 + "m";
+      let gen = "(Gen " + cw_topScores[k].i + ")"
 
       rows.push([n, score, distance, yrange, gen].join(" ") + "<br />");
     }
@@ -1256,16 +1256,16 @@ function createNormal(prop, generator) {
 
 
   function drawCar(car_constants, myCar, camera, ctx) {
-    var camera_x = camera.pos.x;
-    var zoom = camera.zoom;
+    let camera_x = camera.pos.x;
+    let zoom = camera.zoom;
 
-    var wheelMinDensity = car_constants.wheelMinDensity
-    var wheelDensityRange = car_constants.wheelDensityRange
+    let wheelMinDensity = car_constants.wheelMinDensity
+    let wheelDensityRange = car_constants.wheelDensityRange
 
     if (!myCar.alive) {
       return;
     }
-    var myCarPos = myCar.getPosition();
+    let myCarPos = myCar.getPosition();
 
     if (myCarPos.x < (camera_x - 5)) {
       // too far behind, don't draw
@@ -1275,13 +1275,13 @@ function createNormal(prop, generator) {
     ctx.strokeStyle = "#24313a";
     ctx.lineWidth = 1 / zoom;
 
-    var wheels = myCar.car.car.wheels;
+    let wheels = myCar.car.car.wheels;
 
-    for (var i = 0; i < wheels.length; i++) {
-      var wheel = wheels[i];
-      var wheelTransform = getBodyTransform(wheel);
-      var color = Math.round(255 - (255 * (wheel.density - wheelMinDensity)) / wheelDensityRange).toString();
-      var rgbcolor = "rgb(" + color + "," + color + "," + color + ")";
+    for (let i = 0; i < wheels.length; i++) {
+      let wheel = wheels[i];
+      let wheelTransform = getBodyTransform(wheel);
+      let color = Math.round(255 - (255 * (wheel.density - wheelMinDensity)) / wheelDensityRange).toString();
+      let rgbcolor = "rgb(" + color + "," + color + "," + color + ")";
       cw_drawCircle(ctx, wheelTransform, wheel.center, wheel.radius, wheelTransform.angle, rgbcolor);
     }
 
@@ -1294,14 +1294,14 @@ function createNormal(prop, generator) {
     }
     ctx.beginPath();
 
-    var chassis = myCar.car.car.chassis;
-    var chassisTransform = getBodyTransform(chassis);
-    var chassisAngle = chassisTransform.angle || 0;
-    var chassisCos = Math.cos(chassisAngle);
-    var chassisSin = Math.sin(chassisAngle);
+    let chassis = myCar.car.car.chassis;
+    let chassisTransform = getBodyTransform(chassis);
+    let chassisAngle = chassisTransform.angle || 0;
+    let chassisCos = Math.cos(chassisAngle);
+    let chassisSin = Math.sin(chassisAngle);
 
-    for (var t = 0; t < chassis.triangles.length; t++) {
-      var triangle = chassis.triangles[t];
+    for (let t = 0; t < chassis.triangles.length; t++) {
+      let triangle = chassis.triangles[t];
       cw_drawVirtualPoly(ctx, chassisTransform, chassisCos, chassisSin, triangle.vertices, triangle.vertices.length);
     }
     ctx.fill();
@@ -1314,18 +1314,18 @@ function createNormal(prop, generator) {
    * ------------------------------------------------------------------------- */
 
 
-  var run = carRun;
+  let run = carRun;
 
   /* ========================================================================= */
   /* === Car ================================================================= */
-  var cw_Car = function () {
+  let cw_Car = function () {
     this.__constructor.apply(this, arguments);
   }
 
   cw_Car.prototype.__constructor = function (car) {
     this.car = car;
     this.car_def = car.def;
-    var car_def = this.car_def;
+    let car_def = this.car_def;
 
     this.frames = 0;
     this.alive = true;
@@ -1355,9 +1355,9 @@ function createNormal(prop, generator) {
 
   cw_Car.prototype.kill = function (currentRunner, constants) {
     this.minimapmarker.style.borderLeft = "1px solid #aeb8bd";
-    var finishLine = currentRunner.scene.finishLine
-    var max_car_health = constants.max_car_health;
-    var status = run.getStatus(this.car.state, {
+    let finishLine = currentRunner.scene.finishLine
+    let max_car_health = constants.max_car_health;
+    let status = run.getStatus(this.car.state, {
       finishLine: finishLine,
       max_car_health: max_car_health,
     })
@@ -1399,11 +1399,11 @@ function createNormal(prop, generator) {
 
   function setupScene(world_def) {
 
-    var world = b2.createWorld({
+    let world = b2.createWorld({
       gravity: world_def.gravity,
     });
     b2.enableWorldSleeping(world, world_def.doSleep);
-    var floorTiles = cw_createFloor(
+    let floorTiles = cw_createFloor(
       world,
       world_def.floorseed,
       world_def.tileDimensions,
@@ -1411,11 +1411,11 @@ function createNormal(prop, generator) {
       world_def.mutable_floor
     );
 
-    var last_tile = floorTiles[
+    let last_tile = floorTiles[
       floorTiles.length - 1
     ];
-    var tile_position = last_tile.worldVertices[3];
-    var finishLine = tile_position.x + 5;
+    let tile_position = last_tile.worldVertices[3];
+    let finishLine = tile_position.x + 5;
     return {
       world: world,
       floorTiles: floorTiles,
@@ -1424,11 +1424,11 @@ function createNormal(prop, generator) {
   }
 
   function cw_createFloor(world, floorseed, dimensions, maxFloorTiles, mutable_floor) {
-    var last_tile = null;
-    var tile_position = vec2(-5, 0);
-    var cw_floorTiles = [];
+    let last_tile = null;
+    let tile_position = vec2(-5, 0);
+    let cw_floorTiles = [];
     Math.seedrandom(floorseed);
-    for (var k = 0; k < maxFloorTiles; k++) {
+    for (let k = 0; k < maxFloorTiles; k++) {
       if (!mutable_floor) {
         // keep old impossible tracks if not using mutable floors
         last_tile = cw_createFloorTile(
@@ -1448,32 +1448,32 @@ function createNormal(prop, generator) {
 
 
   function cw_createFloorTile(world, dim, position, angle) {
-    var body = b2.createBody(world, {
+    let body = b2.createBody(world, {
       position: position,
     });
 
-    var coords = [
+    let coords = [
       vec2(0, 0),
       vec2(0, -dim.y),
       vec2(dim.x, -dim.y),
       vec2(dim.x, 0)
     ];
 
-    var center = vec2(0, 0);
+    let center = vec2(0, 0);
 
-    var newcoords = cw_rotateFloorTile(coords, center, angle);
+    let newcoords = cw_rotateFloorTile(coords, center, angle);
 
-    var shape = b2.createPolygonShape(body, {
+    let shape = b2.createPolygonShape(body, {
       vertices: newcoords,
       density: 0,
       friction: 0.5,
     });
-    var transform = {
+    let transform = {
       position: cloneVec2(position),
       angle: 0,
     };
-    var worldVertices = new Array(newcoords.length);
-    for (var i = 0; i < newcoords.length; i++) {
+    let worldVertices = new Array(newcoords.length);
+    for (let i = 0; i < newcoords.length; i++) {
       worldVertices[i] = transformPoint(transform, newcoords[i]);
     }
     return {
@@ -1485,11 +1485,11 @@ function createNormal(prop, generator) {
   }
 
   function cw_rotateFloorTile(coords, center, angle) {
-    var cos = Math.cos(angle);
-    var sin = Math.sin(angle);
-    var rotated = new Array(coords.length);
-    for (var i = 0; i < coords.length; i++) {
-      var coord = coords[i];
+    let cos = Math.cos(angle);
+    let sin = Math.sin(angle);
+    let rotated = new Array(coords.length);
+    for (let i = 0; i < coords.length; i++) {
+      let coord = coords[i];
       rotated[i] = {
         x: cos * (coord.x - center.x) - sin * (coord.y - center.y) + center.x,
         y: sin * (coord.x - center.x) + cos * (coord.y - center.y) + center.y,
@@ -1507,13 +1507,13 @@ function createNormal(prop, generator) {
       return;
     }
     if (worldCar.joints) {
-      for (var j = 0; j < worldCar.joints.length; j++) {
+      for (let j = 0; j < worldCar.joints.length; j++) {
         b2.destroyJoint(worldCar.joints[j]);
       }
       worldCar.joints.length = 0;
     }
     if (worldCar.wheels) {
-      for (var w = 0; w < worldCar.wheels.length; w++) {
+      for (let w = 0; w < worldCar.wheels.length; w++) {
         b2.destroyBody(worldCar.wheels[w].body);
       }
       worldCar.wheels.length = 0;
@@ -1530,12 +1530,12 @@ function createNormal(prop, generator) {
       world_def.floorseed = btoa(Math.seedrandom());
     }
 
-    var scene = setupScene(world_def);
+    let scene = setupScene(world_def);
     world_def.finishLine = scene.finishLine;
-    var destroyed = false;
+    let destroyed = false;
     b2.step(scene.world, 1 / world_def.box2dfps, 4);
-    var cars = new Array(defs.length);
-    for (var i = 0; i < defs.length; i++) {
+    let cars = new Array(defs.length);
+    for (let i = 0; i < defs.length; i++) {
       cars[i] = {
         index: i,
         def: defs[i],
@@ -1543,7 +1543,7 @@ function createNormal(prop, generator) {
         state: carRun.getInitialState(world_def)
       };
     }
-    var alivecars = cars.slice();
+    let alivecars = cars.slice();
     return {
       scene: scene,
       cars: cars,
@@ -1563,13 +1563,13 @@ function createNormal(prop, generator) {
         }
         b2.step(scene.world, 1 / world_def.box2dfps, 4);
         listeners.preCarStep();
-        var aliveCount = 0;
-        for (var i = 0; i < alivecars.length; i++) {
-          var car = alivecars[i];
+        let aliveCount = 0;
+        for (let i = 0; i < alivecars.length; i++) {
+          let car = alivecars[i];
           car.state = carRun.updateState(
             world_def, car.car, car.state
           );
-          var status = carRun.getStatus(car.state, world_def);
+          let status = carRun.getStatus(car.state, world_def);
           listeners.carStep(car);
           if (status === 0) {
             alivecars[aliveCount++] = car;
@@ -1598,43 +1598,43 @@ function createNormal(prop, generator) {
 
 
 
-  var plot_graphs = graph_fns.plotGraphs;
+  let plot_graphs = graph_fns.plotGraphs;
 
-  var ghost_draw_frame = ghost_fns.ghost_draw_frame;
-  var ghost_create_ghost = ghost_fns.ghost_create_ghost;
-  var ghost_add_replay_frame = ghost_fns.ghost_add_replay_frame;
-  var ghost_compare_to_replay = ghost_fns.ghost_compare_to_replay;
-  var ghost_get_position = ghost_fns.ghost_get_position;
-  var ghost_move_frame = ghost_fns.ghost_move_frame;
-  var ghost_reset_ghost = ghost_fns.ghost_reset_ghost
-  var ghost_pause = ghost_fns.ghost_pause;
-  var ghost_resume = ghost_fns.ghost_resume;
-  var ghost_create_replay = ghost_fns.ghost_create_replay;
+  let ghost_draw_frame = ghost_fns.ghost_draw_frame;
+  let ghost_create_ghost = ghost_fns.ghost_create_ghost;
+  let ghost_add_replay_frame = ghost_fns.ghost_add_replay_frame;
+  let ghost_compare_to_replay = ghost_fns.ghost_compare_to_replay;
+  let ghost_get_position = ghost_fns.ghost_get_position;
+  let ghost_move_frame = ghost_fns.ghost_move_frame;
+  let ghost_reset_ghost = ghost_fns.ghost_reset_ghost
+  let ghost_pause = ghost_fns.ghost_pause;
+  let ghost_resume = ghost_fns.ghost_resume;
+  let ghost_create_replay = ghost_fns.ghost_create_replay;
 
-  var ghost;
-  var carMap = new Map();
+  let ghost;
+  let carMap = new Map();
 
-  var doDraw = true;
-  var cw_paused = false;
-  var cw_animationFrameId = null;
-  var cw_runningInterval = null;
+  let doDraw = true;
+  let cw_paused = false;
+  let cw_animationFrameId = null;
+  let cw_runningInterval = null;
 
-  var box2dfps = 60;
-  var screenfps = 60;
-  var skipTicks = Math.round(1000 / box2dfps);
-  var maxFrameSkip = skipTicks * 2;
+  let box2dfps = 60;
+  let screenfps = 60;
+  let skipTicks = Math.round(1000 / box2dfps);
+  let maxFrameSkip = skipTicks * 2;
 
-  var canvas = document.getElementById("mainbox");
-  var ctx = canvas.getContext("2d");
-  var generationMeter = document.getElementById("generation");
-  var populationMeter = document.getElementById("population");
-  var carsElem = document.getElementById("cars");
-  var topScoresElem = document.getElementById("topscores");
-  var graphCanvas = document.getElementById("graphcanvas");
-  var seedInput = document.getElementById("newseed");
-  var healthElem = document.getElementById("health");
+  let canvas = document.getElementById("mainbox");
+  let ctx = canvas.getContext("2d");
+  let generationMeter = document.getElementById("generation");
+  let populationMeter = document.getElementById("population");
+  let carsElem = document.getElementById("cars");
+  let topScoresElem = document.getElementById("topscores");
+  let graphCanvas = document.getElementById("graphcanvas");
+  let seedInput = document.getElementById("newseed");
+  let healthElem = document.getElementById("health");
 
-  var camera = {
+  let camera = {
     speed: 0.05,
     pos: {
       x: 0, y: 2
@@ -1643,32 +1643,32 @@ function createNormal(prop, generator) {
     zoom: 70
   }
 
-  var minimapcamera = document.getElementById("minimapcamera").style;
-  var minimapholder = document.querySelector("#minimapholder");
+  let minimapcamera = document.getElementById("minimapcamera").style;
+  let minimapholder = document.querySelector("#minimapholder");
 
-  var minimapcanvas = document.getElementById("minimap");
-  var minimapctx = minimapcanvas.getContext("2d");
-  var minimapscale = 3;
-  var minimapfogdistance = 0;
-  var lastFloorSeed = null;
-  var fogdistance = document.getElementById("minimapfog").style;
-
-
-  var carConstants = carConstruct.carConstants();
+  let minimapcanvas = document.getElementById("minimap");
+  let minimapctx = minimapcanvas.getContext("2d");
+  let minimapscale = 3;
+  let minimapfogdistance = 0;
+  let lastFloorSeed = null;
+  let fogdistance = document.getElementById("minimapfog").style;
 
 
-  var max_car_health = box2dfps * 10;
+  let carConstants = carConstruct.carConstants();
 
-  var cw_ghostReplayInterval = null;
 
-  var distanceMeter = document.getElementById("distancemeter");
-  var heightMeter = document.getElementById("heightmeter");
-  var lastDistanceDisplay = null;
-  var lastHeightDisplay = null;
-  var lastMinimapCameraLeft = null;
-  var lastMinimapCameraTop = null;
+  let max_car_health = box2dfps * 10;
 
-  var leaderPosition = {
+  let cw_ghostReplayInterval = null;
+
+  let distanceMeter = document.getElementById("distancemeter");
+  let heightMeter = document.getElementById("heightmeter");
+  let lastDistanceDisplay = null;
+  let lastHeightDisplay = null;
+  let lastMinimapCameraLeft = null;
+  let lastMinimapCameraTop = null;
+
+  let leaderPosition = {
     x: 0, y: 0
   }
 
@@ -1679,7 +1679,7 @@ function createNormal(prop, generator) {
   // ======= WORLD STATE ======
 
 
-  var world_def = {
+  let world_def = {
     gravity: vec2(0.0, -9.81),
     doSleep: true,
     floorseed: btoa(Math.seedrandom()),
@@ -1692,8 +1692,8 @@ function createNormal(prop, generator) {
     schema: generationConfig.constants.schema
   }
 
-  var cw_deadCars;
-  var graphState = {
+  let cw_deadCars;
+  let graphState = {
     cw_topScores: [],
     cw_graphAverage: [],
     cw_graphElite: [],
@@ -1713,12 +1713,12 @@ function createNormal(prop, generator) {
 
   // ==========================
 
-  var generationState;
+  let generationState;
 
   // ======== Activity State ====
-  var currentRunner;
-  var loops = 0;
-  var nextGameTick = Date.now();
+  let currentRunner;
+  let loops = 0;
+  let nextGameTick = Date.now();
 
   function destroyCurrentRunner() {
     if (currentRunner && typeof currentRunner.destroy === "function") {
@@ -1772,13 +1772,13 @@ function createNormal(prop, generator) {
   /* ==== Drawing ============================================================ */
 
   function cw_drawScreen() {
-    var floorTiles = currentRunner.scene.floorTiles;
+    let floorTiles = currentRunner.scene.floorTiles;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.save();
     cw_setCameraPosition();
-    var camera_x = camera.pos.x;
-    var camera_y = camera.pos.y;
-    var zoom = camera.zoom;
+    let camera_x = camera.pos.x;
+    let camera_y = camera.pos.y;
+    let zoom = camera.zoom;
     ctx.translate(200 - (camera_x * zoom), 200 + (camera_y * zoom));
     ctx.scale(zoom, -zoom);
     cw_drawFloor(ctx, camera, floorTiles);
@@ -1788,10 +1788,10 @@ function createNormal(prop, generator) {
   }
 
   function cw_minimapCamera() {
-    var camera_x = camera.pos.x
-    var camera_y = camera.pos.y
-    var left = Math.round((2 + camera_x) * minimapscale) + "px";
-    var top = Math.round((31 - camera_y) * minimapscale) + "px";
+    let camera_x = camera.pos.x
+    let camera_y = camera.pos.y
+    let left = Math.round((2 + camera_x) * minimapscale) + "px";
+    let top = Math.round((31 - camera_y) * minimapscale) + "px";
     if (left !== lastMinimapCameraLeft) {
       minimapcamera.left = left;
       lastMinimapCameraLeft = left;
@@ -1809,7 +1809,7 @@ function createNormal(prop, generator) {
     }
     // k can be a numeric index from the HTML onclick or a car info object
     if (typeof k === 'number' && currentRunner) {
-      var carInfo = currentRunner.cars[k];
+      let carInfo = currentRunner.cars[k];
       if (carInfo && carMap.has(carInfo)) {
         camera.target = carInfo;
       } else {
@@ -1821,28 +1821,28 @@ function createNormal(prop, generator) {
   }
 
   function cw_setCameraPosition() {
-    var cameraTargetPosition
+    let cameraTargetPosition
     if (camera.target !== -1 && carMap.has(camera.target)) {
       cameraTargetPosition = carMap.get(camera.target).getPosition();
     } else {
       camera.target = -1;
       cameraTargetPosition = leaderPosition;
     }
-    var diff_y = camera.pos.y - cameraTargetPosition.y;
-    var diff_x = camera.pos.x - cameraTargetPosition.x;
+    let diff_y = camera.pos.y - cameraTargetPosition.y;
+    let diff_x = camera.pos.x - cameraTargetPosition.x;
     camera.pos.y -= camera.speed * diff_y;
     camera.pos.x -= camera.speed * diff_x;
     cw_minimapCamera();
   }
 
   function cw_drawGhostReplay() {
-    var floorTiles = currentRunner.scene.floorTiles;
-    var carPosition = ghost_get_position(ghost);
+    let floorTiles = currentRunner.scene.floorTiles;
+    let carPosition = ghost_get_position(ghost);
     if (!carPosition) {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.save();
       cw_setCameraPosition();
-      var zoom = camera.zoom;
+      let zoom = camera.zoom;
       ctx.translate(200 - (camera.pos.x * zoom), 200 + (camera.pos.y * zoom));
       ctx.scale(zoom, -zoom);
       cw_drawFloor(ctx, camera, floorTiles);
@@ -1871,9 +1871,9 @@ function createNormal(prop, generator) {
 
 
   function cw_drawCars() {
-    var cars = currentRunner.cars;
-    for (var k = cars.length - 1; k >= 0; k--) {
-      var myCar = carMap.get(cars[k]);
+    let cars = currentRunner.cars;
+    for (let k = cars.length - 1; k >= 0; k--) {
+      let myCar = carMap.get(cars[k]);
       if (myCar) {
         drawCar(carConstants, myCar, camera, ctx)
       }
@@ -1886,7 +1886,7 @@ function createNormal(prop, generator) {
       doDraw = false;
       cw_stopSimulation();
       cw_runningInterval = setInterval(function () {
-        var time = performance.now() + (1000 / screenfps);
+        let time = performance.now() + (1000 / screenfps);
         while (time > performance.now()) {
           simulationStep();
         }
@@ -1900,10 +1900,10 @@ function createNormal(prop, generator) {
   }
 
   function cw_drawMiniMap() {
-    var floorTiles = currentRunner.scene.floorTiles;
-    var last_tile = null;
-    var tile_position = vec2(-5, 0);
-    var floorChanged = (lastFloorSeed !== world_def.floorseed);
+    let floorTiles = currentRunner.scene.floorTiles;
+    let last_tile = null;
+    let tile_position = vec2(-5, 0);
+    let floorChanged = (lastFloorSeed !== world_def.floorseed);
     lastFloorSeed = world_def.floorseed;
     if (floorChanged) {
       minimapfogdistance = 0;
@@ -1913,7 +1913,7 @@ function createNormal(prop, generator) {
     minimapctx.strokeStyle = "#2563eb";
     minimapctx.beginPath();
     minimapctx.moveTo(0, 35 * minimapscale);
-    for (var k = 0; k < floorTiles.length; k++) {
+    for (let k = 0; k < floorTiles.length; k++) {
       last_tile = floorTiles[k];
       tile_position = last_tile.worldVertices[3];
       minimapctx.lineTo((tile_position.x + 5) * minimapscale, (-tile_position.y + 35) * minimapscale);
@@ -1923,7 +1923,7 @@ function createNormal(prop, generator) {
 
   /* ==== END Drawing ======================================================== */
   /* ========================================================================= */
-  var uiListeners = {
+  let uiListeners = {
     preCarStep: function () {
       ghost_move_frame(ghost);
     },
@@ -1932,10 +1932,10 @@ function createNormal(prop, generator) {
     },
     carDeath(carInfo) {
 
-      var k = carInfo.index;
+      let k = carInfo.index;
 
-      var car = carInfo.car, score = carInfo.score;
-      var cwCar = carMap.get(carInfo);
+      let car = carInfo.car, score = carInfo.score;
+      let cwCar = carMap.get(carInfo);
       cwCar.kill(currentRunner, world_def);
 
       // refocus camera to leader on death
@@ -1949,7 +1949,7 @@ function createNormal(prop, generator) {
       score.i = generationState.counter;
 
       cw_deadCars++;
-      var generationSize = generationConfig.constants.generationSize;
+      let generationSize = generationConfig.constants.generationSize;
       populationMeter.innerHTML = (generationSize - cw_deadCars).toString();
 
       if (leaderPosition.leader == k) {
@@ -1984,17 +1984,17 @@ function createNormal(prop, generator) {
   }
 
   function updateCarUI(carInfo) {
-    var k = carInfo.index;
-    var car = carMap.get(carInfo);
-    var position = car.getPosition();
+    let k = carInfo.index;
+    let car = carMap.get(carInfo);
+    let position = car.getPosition();
 
     ghost_add_replay_frame(car.replay, car.car.car);
-    var markerLeft = Math.round((position.x + 5) * minimapscale) + "px";
+    let markerLeft = Math.round((position.x + 5) * minimapscale) + "px";
     if (markerLeft !== car.lastMarkerLeft) {
       car.minimapmarker.style.left = markerLeft;
       car.lastMarkerLeft = markerLeft;
     }
-    var healthWidth = Math.round((car.car.state.health / max_car_health) * 100) + "%";
+    let healthWidth = Math.round((car.car.state.health / max_car_health) * 100) + "%";
     if (healthWidth !== car.lastHealthWidth) {
       car.healthBar.width = healthWidth;
       car.lastHealthWidth = healthWidth;
@@ -2006,12 +2006,12 @@ function createNormal(prop, generator) {
   }
 
   function cw_findLeader() {
-    var lead = 0;
+    let lead = 0;
     carMap.forEach(function(cwCar, carInfo) {
       if (!cwCar.alive) {
         return;
       }
-      var position = cwCar.getPosition();
+      let position = cwCar.getPosition();
       if (position.x > lead) {
         lead = position.x;
         leaderPosition = position;
@@ -2021,7 +2021,7 @@ function createNormal(prop, generator) {
   }
 
   function fastForward() {
-    var gen = generationState.counter;
+    let gen = generationState.counter;
     while (gen === generationState.counter) {
       currentRunner.step();
     }
@@ -2100,7 +2100,7 @@ function createNormal(prop, generator) {
     generationMeter.innerHTML = "";
     carsElem.innerHTML = "";
     topScoresElem.innerHTML = "";
-    var _gc = graphCanvas;
+    let _gc = graphCanvas;
     cw_clearGraphics(_gc, _gc.getContext("2d"), 400, 250);
     resetGraphState();
   }
@@ -2128,9 +2128,9 @@ function createNormal(prop, generator) {
   }
 
   function setupCarUI() {
-    for (var i = 0; i < currentRunner.cars.length; i++) {
-      var carInfo = currentRunner.cars[i];
-      var car = new cw_Car(carInfo, carMap);
+    for (let i = 0; i < currentRunner.cars.length; i++) {
+      let carInfo = currentRunner.cars[i];
+      let car = new cw_Car(carInfo, carMap);
       carMap.set(carInfo, car);
       car.replay = ghost_create_replay();
       ghost_add_replay_frame(car.replay, car.car.car);
@@ -2263,20 +2263,20 @@ function createNormal(prop, generator) {
   // initial stuff, only called once (hopefully)
   function cw_init() {
     // clone silver dot and health bar
-    var mmm = document.getElementsByName('minimapmarker')[0];
-    var hbar = document.getElementsByName('healthbar')[0];
-    var generationSize = generationConfig.constants.generationSize;
+    let mmm = document.getElementsByName('minimapmarker')[0];
+    let hbar = document.getElementsByName('healthbar')[0];
+    let generationSize = generationConfig.constants.generationSize;
 
-    for (var k = 0; k < generationSize; k++) {
+    for (let k = 0; k < generationSize; k++) {
 
       // minimap markers
-      var newbar = mmm.cloneNode(true);
+      let newbar = mmm.cloneNode(true);
       newbar.id = "bar" + k;
       newbar.style.paddingTop = k * 9 + "px";
       minimapholder.appendChild(newbar);
 
       // health bars
-      var newhealth = hbar.cloneNode(true);
+      let newhealth = hbar.cloneNode(true);
       newhealth.getElementsByTagName("DIV")[0].id = "health" + k;
       newhealth.car_index = k;
       healthElem.appendChild(newhealth);
@@ -2295,11 +2295,11 @@ function createNormal(prop, generator) {
   }
 
   function relMouseCoords(event) {
-    var totalOffsetX = 0;
-    var totalOffsetY = 0;
-    var canvasX = 0;
-    var canvasY = 0;
-    var currentElement = this;
+    let totalOffsetX = 0;
+    let totalOffsetY = 0;
+    let canvasX = 0;
+    let canvasY = 0;
+    let currentElement = this;
 
     do {
       totalOffsetX += currentElement.offsetLeft - currentElement.scrollLeft;
@@ -2315,12 +2315,12 @@ function createNormal(prop, generator) {
   }
   HTMLDivElement.prototype.relMouseCoords = relMouseCoords;
   minimapholder.onclick = function (event) {
-    var coords = minimapholder.relMouseCoords(event);
-    var closest = null;
-    var maxX = -Infinity;
+    let coords = minimapholder.relMouseCoords(event);
+    let closest = null;
+    let maxX = -Infinity;
     carMap.forEach(function (cwCar) {
-      var pos = cwCar.getPosition();
-      var dist = Math.abs(((pos.x + 6) * minimapscale) - coords.x);
+      let pos = cwCar.getPosition();
+      let dist = Math.abs(((pos.x + 6) * minimapscale) - coords.x);
       if (!closest || dist < closest.dist) {
         closest = {
           value: cwCar.car,
@@ -2346,27 +2346,27 @@ function createNormal(prop, generator) {
 
 
   document.querySelector("#mutationrate").addEventListener("change", function (e) {
-    var elem = e.target
+    let elem = e.target
     cw_setMutation(elem.options[elem.selectedIndex].value)
   })
 
   document.querySelector("#mutationsize").addEventListener("change", function (e) {
-    var elem = e.target
+    let elem = e.target
     cw_setMutationRange(elem.options[elem.selectedIndex].value)
   })
 
   document.querySelector("#floor").addEventListener("change", function (e) {
-    var elem = e.target
+    let elem = e.target
     cw_setMutableFloor(elem.options[elem.selectedIndex].value)
   });
 
   document.querySelector("#gravity").addEventListener("change", function (e) {
-    var elem = e.target
+    let elem = e.target
     cw_setGravity(elem.options[elem.selectedIndex].value)
   })
 
   document.querySelector("#elitesize").addEventListener("change", function (e) {
-    var elem = e.target
+    let elem = e.target
     cw_setEliteSize(elem.options[elem.selectedIndex].value)
   })
 
@@ -2384,7 +2384,7 @@ function createNormal(prop, generator) {
 
   function cw_setGravity(choice) {
     world_def.gravity = vec2(0.0, -parseFloat(choice));
-    var world = currentRunner.scene.world
+    let world = currentRunner.scene.world
     // CHECK GRAVITY CHANGES
     if (b2.getWorldGravity(world).y != world_def.gravity.y) {
       b2.setWorldGravity(world, world_def.gravity);
