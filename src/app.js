@@ -939,8 +939,8 @@ function createNormal(prop, generator) {
       if (!frame) return;
 
       // wheel style
-      ctx.fillStyle = "#eee";
-      ctx.strokeStyle = "#aaa";
+      ctx.fillStyle = "#dfe8e7";
+      ctx.strokeStyle = "#8fa4a3";
       ctx.lineWidth = 1 / zoom;
 
       for (var i = 0; i < frame.wheels.length; i++) {
@@ -950,8 +950,8 @@ function createNormal(prop, generator) {
       }
 
       // chassis style
-      ctx.strokeStyle = "#aaa";
-      ctx.fillStyle = "#eee";
+      ctx.strokeStyle = "#8fa4a3";
+      ctx.fillStyle = "#dfe8e7";
       ctx.lineWidth = 1 / zoom;
       ctx.beginPath();
       for (var c in frame.chassis)
@@ -1047,8 +1047,8 @@ function createNormal(prop, generator) {
   function cw_drawFloor(ctx, camera, cw_floorTiles) {
     var camera_x = camera.pos.x;
     var zoom = camera.zoom;
-    ctx.strokeStyle = "#000";
-    ctx.fillStyle = "#777";
+    ctx.strokeStyle = "#17212b";
+    ctx.fillStyle = "#8d9a96";
     ctx.lineWidth = 1 / zoom;
     ctx.beginPath();
 
@@ -1129,7 +1129,7 @@ function createNormal(prop, generator) {
   function cw_plotTop(state, graphctx) {
     var cw_graphTop = state.cw_graphTop;
     var graphsize = cw_graphTop.length;
-    graphctx.strokeStyle = "#C83B3B";
+    graphctx.strokeStyle = "#d94f45";
     graphctx.beginPath();
     graphctx.moveTo(0, 0);
     for (var k = 0; k < graphsize; k++) {
@@ -1141,7 +1141,7 @@ function createNormal(prop, generator) {
   function cw_plotElite(state, graphctx) {
     var cw_graphElite = state.cw_graphElite;
     var graphsize = cw_graphElite.length;
-    graphctx.strokeStyle = "#7BC74D";
+    graphctx.strokeStyle = "#2f8a4c";
     graphctx.beginPath();
     graphctx.moveTo(0, 0);
     for (var k = 0; k < graphsize; k++) {
@@ -1153,7 +1153,7 @@ function createNormal(prop, generator) {
   function cw_plotAverage(state, graphctx) {
     var cw_graphAverage = state.cw_graphAverage;
     var graphsize = cw_graphAverage.length;
-    graphctx.strokeStyle = "#3F72AF";
+    graphctx.strokeStyle = "#2563eb";
     graphctx.beginPath();
     graphctx.moveTo(0, 0);
     for (var k = 0; k < graphsize; k++) {
@@ -1184,7 +1184,7 @@ function createNormal(prop, generator) {
     graphctx.translate(0, graphheight);
     graphctx.scale(1, -1);
     graphctx.lineWidth = 1;
-    graphctx.strokeStyle = "#3F72AF";
+    graphctx.strokeStyle = "#aec0c8";
     graphctx.beginPath();
     graphctx.moveTo(0, graphheight / 2);
     graphctx.lineTo(graphwidth, graphheight / 2);
@@ -1198,7 +1198,7 @@ function createNormal(prop, generator) {
   function cw_listTopScores(elem, state) {
     var cw_topScores = state.cw_topScores;
     var ts = elem;
-    ts.innerHTML = "<b>Top Scores:</b><br />";
+    ts.innerHTML = "<b>Top Scores</b><br />";
     cw_topScores.sort(function (a, b) {
       if (a.v > b.v) {
         return -1
@@ -1243,7 +1243,7 @@ function createNormal(prop, generator) {
       return;
     }
 
-    ctx.strokeStyle = "#444";
+    ctx.strokeStyle = "#24313a";
     ctx.lineWidth = 1 / zoom;
 
     var wheels = myCar.car.car.wheels;
@@ -1257,11 +1257,11 @@ function createNormal(prop, generator) {
     }
 
     if (myCar.is_elite) {
-      ctx.strokeStyle = "#3F72AF";
-      ctx.fillStyle = "#DBE2EF";
+      ctx.strokeStyle = "#2563eb";
+      ctx.fillStyle = "#dbeafe";
     } else {
-      ctx.strokeStyle = "#F7C873";
-      ctx.fillStyle = "#FAEBCD";
+      ctx.strokeStyle = "#d49718";
+      ctx.fillStyle = "#f7e2a8";
     }
     ctx.beginPath();
 
@@ -1303,12 +1303,12 @@ function createNormal(prop, generator) {
     this.minimapmarker = document.getElementById("bar" + car_def.index);
 
     if (this.is_elite) {
-      this.healthBar.backgroundColor = "#3F72AF";
-      this.minimapmarker.style.borderLeft = "1px solid #3F72AF";
+      this.healthBar.backgroundColor = "#2563eb";
+      this.minimapmarker.style.borderLeft = "1px solid #2563eb";
       this.minimapmarker.innerHTML = car_def.index;
     } else {
-      this.healthBar.backgroundColor = "#F7C873";
-      this.minimapmarker.style.borderLeft = "1px solid #F7C873";
+      this.healthBar.backgroundColor = "#d49718";
+      this.minimapmarker.style.borderLeft = "1px solid #d49718";
       this.minimapmarker.innerHTML = car_def.index;
     }
 
@@ -1319,7 +1319,7 @@ function createNormal(prop, generator) {
   }
 
   cw_Car.prototype.kill = function (currentRunner, constants) {
-    this.minimapmarker.style.borderLeft = "1px solid #ccc";
+    this.minimapmarker.style.borderLeft = "1px solid #aeb8bd";
     var finishLine = currentRunner.scene.finishLine
     var max_car_health = constants.max_car_health;
     var status = run.getStatus(this.car.state, {
@@ -1583,7 +1583,7 @@ function createNormal(prop, generator) {
   var camera = {
     speed: 0.05,
     pos: {
-      x: 0, y: 0
+      x: 0, y: 2
     },
     target: -1,
     zoom: 70
@@ -1835,7 +1835,7 @@ function createNormal(prop, generator) {
       fogdistance.width = "800px";
     }
     minimapcanvas.width = minimapcanvas.width;
-    minimapctx.strokeStyle = "#3F72AF";
+    minimapctx.strokeStyle = "#2563eb";
     minimapctx.beginPath();
     minimapctx.moveTo(0, 35 * minimapscale);
     for (var k = 0; k < floorTiles.length; k++) {
@@ -1964,7 +1964,8 @@ function createNormal(prop, generator) {
 
   function cw_newRound(results) {
     destroyCurrentRunner();
-    camera.pos.x = camera.pos.y = 0;
+    camera.pos.x = 0;
+    camera.pos.y = 2;
     cw_setCameraTarget(-1);
 
     // Reset the Math.random seed to true randomness before generating the next generation.
