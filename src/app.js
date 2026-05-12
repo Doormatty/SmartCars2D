@@ -23,6 +23,8 @@
     return { x: v.x, y: v.y };
   }
 
+  var TWO_PI = 2 * Math.PI;
+
   function bodyHandle(entity) {
     return entity && entity.body ? entity.body : entity;
   }
@@ -40,8 +42,11 @@
   }
 
   function transformPoint(transform, point) {
-    var c = Math.cos(transform.angle || 0);
-    var s = Math.sin(transform.angle || 0);
+    var angle = transform.angle || 0;
+    return transformPointWithTrig(transform, point, Math.cos(angle), Math.sin(angle));
+  }
+
+  function transformPointWithTrig(transform, point, c, s) {
     return {
       x: transform.position.x + c * point.x - s * point.y,
       y: transform.position.y + s * point.x + c * point.y,
@@ -78,11 +83,9 @@
     },
     createNormals(prop, generator) {
       var l = prop.length;
-      var values = [];
+      var values = new Array(l);
       for (var i = 0; i < l; i++) {
-        values.push(
-          createNormal(prop, generator)
-        );
+        values[i] = createNormal(prop, generator);
       }
       return values;
     },
@@ -92,11 +95,17 @@
       var sorted = normals.slice().sort(function (a, b) {
         return a - b;
       });
-      return normals.map(function (val) {
-        return sorted.indexOf(val);
-      }).map(function (i) {
-        return i + offset;
-      }).slice(0, limit);
+      var rankByValue = new Map();
+      for (var i = 0; i < sorted.length; i++) {
+        if (!rankByValue.has(sorted[i])) {
+          rankByValue.set(sorted[i], i + offset);
+        }
+      }
+      var values = new Array(Math.min(limit, normals.length));
+      for (i = 0; i < values.length; i++) {
+        values[i] = rankByValue.get(normals[i]);
+      }
+      return values;
     },
     mapToInteger(prop, normals) {
       prop = {
@@ -104,26 +113,33 @@
         range: prop.range || 10,
         length: prop.length
       }
-      return random.mapToFloat(prop, normals).map(function (float) {
-        return Math.round(float);
-      });
+      var values = random.mapToFloat(prop, normals);
+      for (var i = 0; i < values.length; i++) {
+        values[i] = Math.round(values[i]);
+      }
+      return values;
     },
     mapToFloat(prop, normals) {
       prop = {
         min: prop.min || 0,
         range: prop.range || 1
       }
-      return normals.map(function (normal) {
-        var min = prop.min;
-        var range = prop.range;
-        return min + normal * range
-      })
+      var min = prop.min;
+      var range = prop.range;
+      var values = new Array(normals.length);
+      for (var i = 0; i < normals.length; i++) {
+        values[i] = min + normals[i] * range;
+      }
+      return values;
     },
     mutateReplace(prop, generator, originalValues, mutation_range, chanceToMutate) {
       var factor = (prop.factor || 1) * mutation_range;
-      return originalValues.map(function (originalValue) {
+      var values = new Array(originalValues.length);
+      for (var i = 0; i < originalValues.length; i++) {
+        var originalValue = originalValues[i];
         if (generator() > chanceToMutate) {
-          return originalValue;
+          values[i] = originalValue;
+          continue;
         }
 
         // Calculate bounds based on the factor, centered around the original value
@@ -139,8 +155,9 @@
 
         var rangeValue = createNormal({ inclusive: true }, generator);
         // Map [0, 1] to [minBound, maxBound]
-        return minBound + (rangeValue * (maxBound - minBound));
-      });
+        values[i] = minBound + (rangeValue * (maxBound - minBound));
+      }
+      return values;
     }
   };
 
@@ -164,51 +181,66 @@ function createNormal(prop, generator) {
 
   var createInstance = {
     createGenerationZero(schema, generator) {
-      return Object.keys(schema).reduce(function (instance, key) {
+      var instance = { id: Math.random().toString(32) };
+      var keys = Object.keys(schema);
+      for (var i = 0; i < keys.length; i++) {
+        var key = keys[i];
         var schemaProp = schema[key];
-        var values = random.createNormals(schemaProp, generator);
-        instance[key] = values;
-        return instance;
-      }, { id: Math.random().toString(32) });
+        instance[key] = random.createNormals(schemaProp, generator);
+      }
+      return instance;
     },
     createCrossBreed(schema, parents, parentChooser) {
       var id = Math.random().toString(32);
-      return Object.keys(schema).reduce(function (crossDef, key) {
+      var ancestry = new Array(parents.length);
+      for (var i = 0; i < parents.length; i++) {
+        ancestry[i] = {
+          id: parents[i].id,
+          ancestry: parents[i].ancestry,
+        };
+      }
+      var crossDef = {
+        id: id,
+        ancestry: ancestry
+      };
+      var keys = Object.keys(schema);
+      for (var keyIndex = 0; keyIndex < keys.length; keyIndex++) {
+        var key = keys[keyIndex];
         var schemaDef = schema[key];
-        var values = [];
-        for (var i = 0, l = schemaDef.length; i < l; i++) {
+        var values = new Array(schemaDef.length);
+        for (var valueIndex = 0, l = schemaDef.length; valueIndex < l; valueIndex++) {
           var p = parentChooser(id, key, parents);
-          values.push(parents[p][key][i]);
+          values[valueIndex] = parents[p][key][valueIndex];
         }
         crossDef[key] = values;
-        return crossDef;
-      }, {
-        id: id,
-        ancestry: parents.map(function (parent) {
-          return {
-            id: parent.id,
-            ancestry: parent.ancestry,
-          };
-        })
-      });
+      }
+      return crossDef;
     },
     createMutatedClone(schema, generator, parent, factor, chanceToMutate) {
       var mutateFn = random.mutateReplace;
-      return Object.keys(schema).reduce(function (clone, key) {
-        var schemaProp = schema[key];
-        var originalValues = parent[key];
-        var values = mutateFn(
-          schemaProp, generator, originalValues, factor, chanceToMutate
-        );
-        clone[key] = values;
-        return clone;
-      }, {
+      var clone = {
         id: parent.id,
         ancestry: parent.ancestry
-      });
+      };
+      var keys = Object.keys(schema);
+      for (var i = 0; i < keys.length; i++) {
+        var key = keys[i];
+        var schemaProp = schema[key];
+        var originalValues = parent[key];
+        clone[key] = mutateFn(
+          schemaProp, generator, originalValues, factor, chanceToMutate
+        );
+      }
+      return clone;
     },
     applyTypes(schema, parent) {
-      return Object.keys(schema).reduce(function (clone, key) {
+      var clone = {
+        id: parent.id,
+        ancestry: parent.ancestry
+      };
+      var keys = Object.keys(schema);
+      for (var i = 0; i < keys.length; i++) {
+        var key = keys[i];
         var schemaProp = schema[key];
         var originalValues = parent[key];
         var values;
@@ -223,11 +255,8 @@ function createNormal(prop, generator) {
             throw new Error(`Unknown type ${schemaProp.type} of schema for key ${key}`);
         }
         clone[key] = values;
-        return clone;
-      }, {
-        id: parent.id,
-        ancestry: parent.ancestry
-      });
+      }
+      return clone;
     },
   }
 
@@ -333,15 +362,16 @@ function createNormal(prop, generator) {
 
   function createChassis(world, vertexs, density) {
 
-    var vertex_list = new Array();
-    vertex_list.push(vec2(vertexs[0], 0));
-    vertex_list.push(vec2(vertexs[1], vertexs[2]));
-    vertex_list.push(vec2(0, vertexs[3]));
-    vertex_list.push(vec2(-vertexs[4], vertexs[5]));
-    vertex_list.push(vec2(-vertexs[6], 0));
-    vertex_list.push(vec2(-vertexs[7], -vertexs[8]));
-    vertex_list.push(vec2(0, -vertexs[9]));
-    vertex_list.push(vec2(vertexs[10], -vertexs[11]));
+    var vertex_list = [
+      vec2(vertexs[0], 0),
+      vec2(vertexs[1], vertexs[2]),
+      vec2(0, vertexs[3]),
+      vec2(-vertexs[4], vertexs[5]),
+      vec2(-vertexs[6], 0),
+      vec2(-vertexs[7], -vertexs[8]),
+      vec2(0, -vertexs[9]),
+      vec2(vertexs[10], -vertexs[11])
+    ];
 
     var chassis = {
       body: b2.createBody(world, {
@@ -366,10 +396,11 @@ function createNormal(prop, generator) {
 
 
   function createChassisPart(chassis, vertex1, vertex2, density) {
-    var vertex_list = new Array();
-    vertex_list.push(cloneVec2(vertex1));
-    vertex_list.push(cloneVec2(vertex2));
-    vertex_list.push(vec2(0, 0));
+    var vertex_list = [
+      cloneVec2(vertex1),
+      cloneVec2(vertex2),
+      vec2(0, 0)
+    ];
     var shape = b2.createPolygonShape(chassis.body, {
       vertices: vertex_list,
       density: density,
@@ -526,10 +557,6 @@ function createNormal(prop, generator) {
 
     var state = currentChoices.get(chooseId);
     state.i++
-    if (["wheel_radius", "wheel_vertex", "wheel_density"].indexOf(key) > -1) {
-      state.curparent = cw_chooseParent(state);
-      return state.curparent;
-    }
     state.curparent = cw_chooseParent(state);
     return state.curparent;
 
@@ -631,13 +658,12 @@ function createNormal(prop, generator) {
         generationSize = config.generationSize,
         selectFromAllParents = config.selectFromAllParents;
 
-      var newGeneration = new Array();
+      var newGeneration = new Array(generationSize);
       var newborn;
       for (var k = 0; k < champion_length; k++) {
-        ``
         scores[k].def.is_elite = true;
         scores[k].def.index = k;
-        newGeneration.push(scores[k].def);
+        newGeneration[k] = scores[k].def;
       }
       var parentList = [];
       for (k = champion_length; k < generationSize; k++) {
@@ -648,13 +674,11 @@ function createNormal(prop, generator) {
         }
         var pair = [parent1, parent2]
         parentList.push(pair);
-        newborn = makeChild(config,
-          pair.map(function (parent) { return scores[parent].def; })
-        );
+        newborn = makeChild(config, [scores[parent1].def, scores[parent2].def]);
         newborn = mutate(config, newborn);
         newborn.is_elite = false;
         newborn.index = k;
-        newGeneration.push(newborn);
+        newGeneration[k] = newborn;
       }
 
       return {
@@ -784,23 +808,25 @@ function createNormal(prop, generator) {
   }
 
   function ghost_get_chassis(c) {
-    var gc = [];
+    var gc = new Array(c.triangles.length);
     var transform = getBodyTransform(c);
+    var angle = transform.angle || 0;
+    var cos = Math.cos(angle);
+    var sin = Math.sin(angle);
 
     for (var t = 0; t < c.triangles.length; t++) {
       var triangle = c.triangles[t];
+      var vertices = triangle.vertices;
       var p = {
-        vtx: [],
-        num: 0
+        vtx: new Array(vertices.length),
+        num: vertices.length
+      };
+
+      for (var i = 0; i < vertices.length; i++) {
+        p.vtx[i] = transformPointWithTrig(transform, vertices[i], cos, sin);
       }
 
-      p.num = triangle.vertices.length;
-
-      for (var i = 0; i < triangle.vertices.length; i++) {
-        p.vtx.push(transformPoint(transform, triangle.vertices[i]));
-      }
-
-      gc.push(p);
+      gc[t] = p;
     }
 
     return gc;
@@ -809,11 +835,14 @@ function createNormal(prop, generator) {
   function ghost_get_wheel(w) {
     var gw = [];
     var transform = getBodyTransform(w);
+    var angle = transform.angle || 0;
 
     gw.push({
-      pos: transformPoint(transform, w.center),
+      pos: w.center.x === 0 && w.center.y === 0
+        ? cloneVec2(transform.position)
+        : transformPointWithTrig(transform, w.center, Math.cos(angle), Math.sin(angle)),
       rad: w.radius,
-      ang: transform.angle
+      ang: angle
     });
 
     return gw;
@@ -944,9 +973,8 @@ function createNormal(prop, generator) {
       ctx.lineWidth = 1 / zoom;
 
       for (var i = 0; i < frame.wheels.length; i++) {
-        for (var w in frame.wheels[i]) {
-          ghost_draw_circle(ctx, frame.wheels[i][w].pos, frame.wheels[i][w].rad, frame.wheels[i][w].ang);
-        }
+        var wheelFrame = frame.wheels[i][0];
+        ghost_draw_circle(ctx, wheelFrame.pos, wheelFrame.rad, wheelFrame.ang);
       }
 
       // chassis style
@@ -954,8 +982,9 @@ function createNormal(prop, generator) {
       ctx.fillStyle = "#dfe8e7";
       ctx.lineWidth = 1 / zoom;
       ctx.beginPath();
-      for (var c in frame.chassis)
+      for (var c = 0; c < frame.chassis.length; c++) {
         ghost_draw_poly(ctx, frame.chassis[c].vtx, frame.chassis[c].num);
+      }
       ctx.fill();
       ctx.stroke();
     }
@@ -970,7 +999,7 @@ function createNormal(prop, generator) {
 
     function ghost_draw_circle(ctx, center, radius, angle) {
       ctx.beginPath();
-      ctx.arc(center.x, center.y, radius, 0, 2 * Math.PI, true);
+      ctx.arc(center.x, center.y, radius, 0, TWO_PI, true);
 
       ctx.moveTo(center.x, center.y);
       ctx.lineTo(center.x + radius * Math.cos(angle), center.y + radius * Math.sin(angle));
@@ -994,15 +1023,14 @@ function createNormal(prop, generator) {
    * ------------------------------------------------------------------------- */
 
 
-  function cw_drawVirtualPoly(ctx, body, vtx, n_vtx) {
+  function cw_drawVirtualPoly(ctx, transform, cos, sin, vtx, n_vtx) {
     // set strokestyle and fillstyle before call
     // call beginPath before call
 
-    var transform = getBodyTransform(body);
-    var p0 = transformPoint(transform, vtx[0]);
+    var p0 = transformPointWithTrig(transform, vtx[0], cos, sin);
     ctx.moveTo(p0.x, p0.y);
     for (var i = 1; i < n_vtx; i++) {
-      var p = transformPoint(transform, vtx[i]);
+      var p = transformPointWithTrig(transform, vtx[i], cos, sin);
       ctx.lineTo(p.x, p.y);
     }
     ctx.lineTo(p0.x, p0.y);
@@ -1025,12 +1053,14 @@ function createNormal(prop, generator) {
 
 
 
-  function cw_drawCircle(ctx, body, center, radius, angle, color) {
-    var p = getWorldPoint(body, center);
+  function cw_drawCircle(ctx, transform, center, radius, angle, color) {
+    var p = center.x === 0 && center.y === 0
+      ? transform.position
+      : transformPoint(transform, center);
     ctx.fillStyle = color;
 
     ctx.beginPath();
-    ctx.arc(p.x, p.y, radius, 0, 2 * Math.PI, true);
+    ctx.arc(p.x, p.y, radius, 0, TWO_PI, true);
 
     ctx.moveTo(p.x, p.y);
     ctx.lineTo(p.x + radius * Math.cos(angle), p.y + radius * Math.sin(angle));
@@ -1180,9 +1210,9 @@ function createNormal(prop, generator) {
   }
 
   function cw_clearGraphics(graphcanvas, graphctx, graphwidth, graphheight) {
-    graphcanvas.width = graphcanvas.width;
-    graphctx.translate(0, graphheight);
-    graphctx.scale(1, -1);
+    graphctx.setTransform(1, 0, 0, 1, 0, 0);
+    graphctx.clearRect(0, 0, graphcanvas.width, graphcanvas.height);
+    graphctx.setTransform(1, 0, 0, -1, 0, graphheight);
     graphctx.lineWidth = 1;
     graphctx.strokeStyle = "#aec0c8";
     graphctx.beginPath();
@@ -1196,10 +1226,7 @@ function createNormal(prop, generator) {
   }
 
   function cw_listTopScores(elem, state) {
-    var cw_topScores = state.cw_topScores;
-    var ts = elem;
-    ts.innerHTML = "<b>Top Scores</b><br />";
-    cw_topScores.sort(function (a, b) {
+    var cw_topScores = state.cw_topScores.slice().sort(function (a, b) {
       if (a.v > b.v) {
         return -1
       } else {
@@ -1207,6 +1234,7 @@ function createNormal(prop, generator) {
       }
     });
 
+    var rows = ["<b>Top Scores</b><br />"];
     for (var k = 0; k < Math.min(10, cw_topScores.length); k++) {
       var topScore = cw_topScores[k];
       var n = "#" + (k + 1) + ":";
@@ -1215,8 +1243,9 @@ function createNormal(prop, generator) {
       var yrange = "h:" + Math.round(topScore.y2 * 100) / 100 + "/" + Math.round(topScore.y * 100) / 100 + "m";
       var gen = "(Gen " + cw_topScores[k].i + ")"
 
-      ts.innerHTML += [n, score, distance, yrange, gen].join(" ") + "<br />";
+      rows.push([n, score, distance, yrange, gen].join(" ") + "<br />");
     }
+    elem.innerHTML = rows.join("");
   }
 
   /* -------------------------------------------------------------------------
@@ -1253,7 +1282,7 @@ function createNormal(prop, generator) {
       var wheelTransform = getBodyTransform(wheel);
       var color = Math.round(255 - (255 * (wheel.density - wheelMinDensity)) / wheelDensityRange).toString();
       var rgbcolor = "rgb(" + color + "," + color + "," + color + ")";
-      cw_drawCircle(ctx, wheel, wheel.center, wheel.radius, wheelTransform.angle, rgbcolor);
+      cw_drawCircle(ctx, wheelTransform, wheel.center, wheel.radius, wheelTransform.angle, rgbcolor);
     }
 
     if (myCar.is_elite) {
@@ -1266,10 +1295,14 @@ function createNormal(prop, generator) {
     ctx.beginPath();
 
     var chassis = myCar.car.car.chassis;
+    var chassisTransform = getBodyTransform(chassis);
+    var chassisAngle = chassisTransform.angle || 0;
+    var chassisCos = Math.cos(chassisAngle);
+    var chassisSin = Math.sin(chassisAngle);
 
     for (var t = 0; t < chassis.triangles.length; t++) {
       var triangle = chassis.triangles[t];
-      cw_drawVirtualPoly(ctx, chassis, triangle.vertices, triangle.vertices.length);
+      cw_drawVirtualPoly(ctx, chassisTransform, chassisCos, chassisSin, triangle.vertices, triangle.vertices.length);
     }
     ctx.fill();
     ctx.stroke();
@@ -1301,6 +1334,8 @@ function createNormal(prop, generator) {
     this.healthBarText = document.getElementById("health" + car_def.index).nextSibling.nextSibling;
     this.healthBarText.innerHTML = car_def.index;
     this.minimapmarker = document.getElementById("bar" + car_def.index);
+    this.lastHealthWidth = null;
+    this.lastMarkerLeft = null;
 
     if (this.is_elite) {
       this.healthBar.backgroundColor = "#2563eb";
@@ -1417,11 +1452,12 @@ function createNormal(prop, generator) {
       position: position,
     });
 
-    var coords = new Array();
-    coords.push(vec2(0, 0));
-    coords.push(vec2(0, -dim.y));
-    coords.push(vec2(dim.x, -dim.y));
-    coords.push(vec2(dim.x, 0));
+    var coords = [
+      vec2(0, 0),
+      vec2(0, -dim.y),
+      vec2(dim.x, -dim.y),
+      vec2(dim.x, 0)
+    ];
 
     var center = vec2(0, 0);
 
@@ -1436,23 +1472,30 @@ function createNormal(prop, generator) {
       position: cloneVec2(position),
       angle: 0,
     };
+    var worldVertices = new Array(newcoords.length);
+    for (var i = 0; i < newcoords.length; i++) {
+      worldVertices[i] = transformPoint(transform, newcoords[i]);
+    }
     return {
       body: body,
       shape: shape,
       vertices: newcoords,
-      worldVertices: newcoords.map(function (coord) {
-        return transformPoint(transform, coord);
-      }),
+      worldVertices: worldVertices,
     };
   }
 
   function cw_rotateFloorTile(coords, center, angle) {
-    return coords.map(function (coord) {
-      return {
-        x: Math.cos(angle) * (coord.x - center.x) - Math.sin(angle) * (coord.y - center.y) + center.x,
-        y: Math.sin(angle) * (coord.x - center.x) + Math.cos(angle) * (coord.y - center.y) + center.y,
+    var cos = Math.cos(angle);
+    var sin = Math.sin(angle);
+    var rotated = new Array(coords.length);
+    for (var i = 0; i < coords.length; i++) {
+      var coord = coords[i];
+      rotated[i] = {
+        x: cos * (coord.x - center.x) - sin * (coord.y - center.y) + center.x,
+        y: sin * (coord.x - center.x) + cos * (coord.y - center.y) + center.y,
       };
-    });
+    }
+    return rotated;
   }
 
 
@@ -1491,15 +1534,16 @@ function createNormal(prop, generator) {
     world_def.finishLine = scene.finishLine;
     var destroyed = false;
     b2.step(scene.world, 1 / world_def.box2dfps, 4);
-    var cars = defs.map((def, i) => {
-      return {
+    var cars = new Array(defs.length);
+    for (var i = 0; i < defs.length; i++) {
+      cars[i] = {
         index: i,
-        def: def,
-        car: defToCar(def, scene.world, world_def),
+        def: defs[i],
+        car: defToCar(defs[i], scene.world, world_def),
         state: carRun.getInitialState(world_def)
       };
-    });
-    var alivecars = cars;
+    }
+    var alivecars = cars.slice();
     return {
       scene: scene,
       cars: cars,
@@ -1519,22 +1563,24 @@ function createNormal(prop, generator) {
         }
         b2.step(scene.world, 1 / world_def.box2dfps, 4);
         listeners.preCarStep();
-        alivecars = alivecars.filter(function (car) {
+        var aliveCount = 0;
+        for (var i = 0; i < alivecars.length; i++) {
+          var car = alivecars[i];
           car.state = carRun.updateState(
             world_def, car.car, car.state
           );
           var status = carRun.getStatus(car.state, world_def);
           listeners.carStep(car);
           if (status === 0) {
-            return true;
+            alivecars[aliveCount++] = car;
+            continue;
           }
           car.score = carRun.calculateScore(car.state, world_def);
           listeners.carDeath(car);
 
           destroyCarBody(car.car);
-
-          return false;
-        })
+        }
+        alivecars.length = aliveCount;
         if (alivecars.length === 0) {
           listeners.generationEnd(cars);
         }
@@ -1571,6 +1617,7 @@ function createNormal(prop, generator) {
   var doDraw = true;
   var cw_paused = false;
   var cw_animationFrameId = null;
+  var cw_runningInterval = null;
 
   var box2dfps = 60;
   var screenfps = 60;
@@ -1579,6 +1626,13 @@ function createNormal(prop, generator) {
 
   var canvas = document.getElementById("mainbox");
   var ctx = canvas.getContext("2d");
+  var generationMeter = document.getElementById("generation");
+  var populationMeter = document.getElementById("population");
+  var carsElem = document.getElementById("cars");
+  var topScoresElem = document.getElementById("topscores");
+  var graphCanvas = document.getElementById("graphcanvas");
+  var seedInput = document.getElementById("newseed");
+  var healthElem = document.getElementById("health");
 
   var camera = {
     speed: 0.05,
@@ -1609,6 +1663,10 @@ function createNormal(prop, generator) {
 
   var distanceMeter = document.getElementById("distancemeter");
   var heightMeter = document.getElementById("heightmeter");
+  var lastDistanceDisplay = null;
+  var lastHeightDisplay = null;
+  var lastMinimapCameraLeft = null;
+  var lastMinimapCameraTop = null;
 
   var leaderPosition = {
     x: 0, y: 0
@@ -1660,7 +1718,7 @@ function createNormal(prop, generator) {
   // ======== Activity State ====
   var currentRunner;
   var loops = 0;
-  var nextGameTick = (new Date).getTime();
+  var nextGameTick = Date.now();
 
   function destroyCurrentRunner() {
     if (currentRunner && typeof currentRunner.destroy === "function") {
@@ -1669,8 +1727,14 @@ function createNormal(prop, generator) {
   }
 
   function showDistance(distance, height) {
-    distanceMeter.innerHTML = distance + " meters<br />";
-    heightMeter.innerHTML = height + " meters";
+    if (distance !== lastDistanceDisplay) {
+      distanceMeter.innerHTML = distance + " meters<br />";
+      lastDistanceDisplay = distance;
+    }
+    if (height !== lastHeightDisplay) {
+      heightMeter.innerHTML = height + " meters";
+      lastHeightDisplay = height;
+    }
     if (distance > minimapfogdistance) {
       fogdistance.width = 800 - Math.round(distance + 15) * minimapscale + "px";
       minimapfogdistance = distance;
@@ -1696,9 +1760,9 @@ function createNormal(prop, generator) {
     leaderPosition = {
       x: 0, y: 0
     };
-    document.getElementById("generation").innerHTML = generationState.counter.toString();
-    document.getElementById("cars").innerHTML = "";
-    document.getElementById("population").innerHTML = generationConfig.constants.generationSize.toString();
+    generationMeter.innerHTML = generationState.counter.toString();
+    carsElem.innerHTML = "";
+    populationMeter.innerHTML = generationConfig.constants.generationSize.toString();
   }
 
   /* ==== END Genration ====================================================== */
@@ -1726,8 +1790,16 @@ function createNormal(prop, generator) {
   function cw_minimapCamera() {
     var camera_x = camera.pos.x
     var camera_y = camera.pos.y
-    minimapcamera.left = Math.round((2 + camera_x) * minimapscale) + "px";
-    minimapcamera.top = Math.round((31 - camera_y) * minimapscale) + "px";
+    var left = Math.round((2 + camera_x) * minimapscale) + "px";
+    var top = Math.round((31 - camera_y) * minimapscale) + "px";
+    if (left !== lastMinimapCameraLeft) {
+      minimapcamera.left = left;
+      lastMinimapCameraLeft = left;
+    }
+    if (top !== lastMinimapCameraTop) {
+      minimapcamera.top = top;
+      lastMinimapCameraTop = top;
+    }
   }
 
   function cw_setCameraTarget(k) {
@@ -1799,15 +1871,17 @@ function createNormal(prop, generator) {
 
 
   function cw_drawCars() {
-    var cw_carArray = Array.from(carMap.values());
-    for (var k = (cw_carArray.length - 1); k >= 0; k--) {
-      var myCar = cw_carArray[k];
-      drawCar(carConstants, myCar, camera, ctx)
+    var cars = currentRunner.cars;
+    for (var k = cars.length - 1; k >= 0; k--) {
+      var myCar = carMap.get(cars[k]);
+      if (myCar) {
+        drawCar(carConstants, myCar, camera, ctx)
+      }
     }
   }
 
   function toggleDisplay() {
-    canvas.width = canvas.width;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
     if (doDraw) {
       doDraw = false;
       cw_stopSimulation();
@@ -1820,6 +1894,7 @@ function createNormal(prop, generator) {
     } else {
       doDraw = true;
       clearInterval(cw_runningInterval);
+      cw_runningInterval = null;
       cw_startSimulation();
     }
   }
@@ -1834,7 +1909,7 @@ function createNormal(prop, generator) {
       minimapfogdistance = 0;
       fogdistance.width = "800px";
     }
-    minimapcanvas.width = minimapcanvas.width;
+    minimapctx.clearRect(0, 0, minimapcanvas.width, minimapcanvas.height);
     minimapctx.strokeStyle = "#2563eb";
     minimapctx.beginPath();
     minimapctx.moveTo(0, 35 * minimapscale);
@@ -1875,7 +1950,7 @@ function createNormal(prop, generator) {
 
       cw_deadCars++;
       var generationSize = generationConfig.constants.generationSize;
-      document.getElementById("population").innerHTML = (generationSize - cw_deadCars).toString();
+      populationMeter.innerHTML = (generationSize - cw_deadCars).toString();
 
       if (leaderPosition.leader == k) {
         // leader is dead, find new leader
@@ -1898,7 +1973,7 @@ function createNormal(prop, generator) {
 
   function gameLoop() {
     loops = 0;
-    while (!cw_paused && (new Date).getTime() > nextGameTick && loops < maxFrameSkip) {
+    while (!cw_paused && Date.now() > nextGameTick && loops < maxFrameSkip) {
       nextGameTick += skipTicks;
       loops++;
     }
@@ -1914,8 +1989,16 @@ function createNormal(prop, generator) {
     var position = car.getPosition();
 
     ghost_add_replay_frame(car.replay, car.car.car);
-    car.minimapmarker.style.left = Math.round((position.x + 5) * minimapscale) + "px";
-    car.healthBar.width = Math.round((car.car.state.health / max_car_health) * 100) + "%";
+    var markerLeft = Math.round((position.x + 5) * minimapscale) + "px";
+    if (markerLeft !== car.lastMarkerLeft) {
+      car.minimapmarker.style.left = markerLeft;
+      car.lastMarkerLeft = markerLeft;
+    }
+    var healthWidth = Math.round((car.car.state.health / max_car_health) * 100) + "%";
+    if (healthWidth !== car.lastHealthWidth) {
+      car.healthBar.width = healthWidth;
+      car.lastHealthWidth = healthWidth;
+    }
     if (position.x > leaderPosition.x) {
       leaderPosition = position;
       leaderPosition.leader = k;
@@ -1954,8 +2037,8 @@ function createNormal(prop, generator) {
       }
     })
     graphState = plot_graphs(
-      document.getElementById("graphcanvas"),
-      document.getElementById("topscores"),
+      graphCanvas,
+      topScoresElem,
       null,
       graphState,
       results
@@ -2000,6 +2083,10 @@ function createNormal(prop, generator) {
       window.cancelAnimationFrame(cw_animationFrameId);
       cw_animationFrameId = null;
     }
+    if (cw_runningInterval !== null) {
+      clearInterval(cw_runningInterval);
+      cw_runningInterval = null;
+    }
   }
 
   function cw_clearPopulationWorld() {
@@ -2010,10 +2097,10 @@ function createNormal(prop, generator) {
   }
 
   function cw_resetPopulationUI() {
-    document.getElementById("generation").innerHTML = "";
-    document.getElementById("cars").innerHTML = "";
-    document.getElementById("topscores").innerHTML = "";
-    var _gc = document.getElementById("graphcanvas");
+    generationMeter.innerHTML = "";
+    carsElem.innerHTML = "";
+    topScoresElem.innerHTML = "";
+    var _gc = graphCanvas;
     cw_clearGraphics(_gc, _gc.getContext("2d"), 400, 250);
     resetGraphState();
   }
@@ -2021,7 +2108,7 @@ function createNormal(prop, generator) {
   function cw_resetWorld() {
     doDraw = true;
     cw_stopSimulation();
-    world_def.floorseed = document.getElementById("newseed").value;
+    world_def.floorseed = seedInput.value;
     cw_clearPopulationWorld();
     destroyCurrentRunner();
     cw_resetPopulationUI();
@@ -2041,12 +2128,13 @@ function createNormal(prop, generator) {
   }
 
   function setupCarUI() {
-    currentRunner.cars.map(function (carInfo) {
+    for (var i = 0; i < currentRunner.cars.length; i++) {
+      var carInfo = currentRunner.cars[i];
       var car = new cw_Car(carInfo, carMap);
       carMap.set(carInfo, car);
       car.replay = ghost_create_replay();
       ghost_add_replay_frame(car.replay, car.car.car);
-    })
+    }
   }
 
 
@@ -2067,6 +2155,7 @@ function createNormal(prop, generator) {
   })
 
   document.querySelector("#new-population").addEventListener("click", function () {
+    doDraw = true;
     cw_stopSimulation();
     cw_clearPopulationWorld();
     destroyCurrentRunner();
@@ -2094,6 +2183,7 @@ function createNormal(prop, generator) {
       alert("No saved progress found");
       return;
     }
+    doDraw = true;
     cw_stopSimulation();
     cw_clearPopulationWorld();
     destroyCurrentRunner();
@@ -2102,7 +2192,7 @@ function createNormal(prop, generator) {
     ghost = JSON.parse(localStorage.cw_ghost);
     graphState.cw_topScores = JSON.parse(localStorage.cw_topScores);
     world_def.floorseed = localStorage.cw_floorSeed;
-    document.getElementById("newseed").value = world_def.floorseed;
+    seedInput.value = world_def.floorseed;
 
     currentRunner = worldRun(world_def, generationState.generation, uiListeners);
     setupCarUI();
@@ -2189,7 +2279,7 @@ function createNormal(prop, generator) {
       var newhealth = hbar.cloneNode(true);
       newhealth.getElementsByTagName("DIV")[0].id = "health" + k;
       newhealth.car_index = k;
-      document.getElementById("health").appendChild(newhealth);
+      healthElem.appendChild(newhealth);
     }
     mmm.parentNode.removeChild(mmm);
     hbar.parentNode.removeChild(hbar);
@@ -2226,23 +2316,25 @@ function createNormal(prop, generator) {
   HTMLDivElement.prototype.relMouseCoords = relMouseCoords;
   minimapholder.onclick = function (event) {
     var coords = minimapholder.relMouseCoords(event);
-    var cw_carArray = Array.from(carMap.values());
-    var closest = {
-      value: cw_carArray[0].car,
-      dist: Math.abs(((cw_carArray[0].getPosition().x + 6) * minimapscale) - coords.x),
-      x: cw_carArray[0].getPosition().x
-    }
-
-    var maxX = 0;
-    for (var i = 0; i < cw_carArray.length; i++) {
-      var pos = cw_carArray[i].getPosition();
+    var closest = null;
+    var maxX = -Infinity;
+    carMap.forEach(function (cwCar) {
+      var pos = cwCar.getPosition();
       var dist = Math.abs(((pos.x + 6) * minimapscale) - coords.x);
-      if (dist < closest.dist) {
-        closest.value = cw_carArray[i].car;
-        closest.dist = dist;
-        closest.x = pos.x;
+      if (!closest || dist < closest.dist) {
+        closest = {
+          value: cwCar.car,
+          dist: dist,
+          x: pos.x
+        };
       }
-      maxX = Math.max(pos.x, maxX);
+      if (pos.x > maxX) {
+        maxX = pos.x;
+      }
+    });
+
+    if (!closest) {
+      return;
     }
 
     if (closest.x == maxX) { // focus on leader again
