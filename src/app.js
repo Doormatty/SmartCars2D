@@ -10,7 +10,7 @@
   const b2 = await Box2D({
     module: {
       locateFile(path) {
-        return "lib/box2d-v3/build/" + path;
+        return "lib/box2d-v3/" + path;
       },
     },
   });
