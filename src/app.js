@@ -25,6 +25,44 @@
     return { x: v.x, y: v.y };
   }
 
+  function requireElementById(id) {
+    const element = document.getElementById(id);
+    if (!element) {
+      throw new Error("Missing required element #" + id);
+    }
+    return element;
+  }
+
+  function requireNamedElement(name) {
+    const elements = document.getElementsByName(name);
+    if (elements.length === 0) {
+      throw new Error("Missing required element named " + name);
+    }
+    return elements[0];
+  }
+
+  function get2dContext(canvas, label) {
+    const context = canvas.getContext("2d");
+    if (!context) {
+      throw new Error("2D canvas context is unavailable for " + label);
+    }
+    return context;
+  }
+
+  function parseFiniteFloat(value, fallback) {
+    const parsed = Number.parseFloat(value);
+    return Number.isFinite(parsed) ? parsed : fallback;
+  }
+
+  function parseFiniteInteger(value, fallback) {
+    const parsed = Number.parseInt(value, 10);
+    return Number.isFinite(parsed) ? parsed : fallback;
+  }
+
+  function clamp(value, min, max) {
+    return Math.min(max, Math.max(min, value));
+  }
+
   const TWO_PI = 2 * Math.PI;
 
   function createId() {
@@ -114,24 +152,24 @@
       return values;
     },
     mapToInteger(prop, normals) {
-      prop = {
-        min: prop.min || 0,
-        range: prop.range || 10,
+      let normalizedProp = {
+        min: Number.isFinite(prop.min) ? prop.min : 0,
+        range: Number.isFinite(prop.range) ? prop.range : 10,
         length: prop.length
-      }
-      let values = random.mapToFloat(prop, normals);
+      };
+      let values = random.mapToFloat(normalizedProp, normals);
       for (let i = 0; i < values.length; i++) {
         values[i] = Math.round(values[i]);
       }
       return values;
     },
     mapToFloat(prop, normals) {
-      prop = {
-        min: prop.min || 0,
-        range: prop.range || 1
-      }
-      let min = prop.min;
-      let range = prop.range;
+      let normalizedProp = {
+        min: Number.isFinite(prop.min) ? prop.min : 0,
+        range: Number.isFinite(prop.range) ? prop.range : 1
+      };
+      let min = normalizedProp.min;
+      let range = normalizedProp.range;
       let values = new Array(normals.length);
       for (let i = 0; i < normals.length; i++) {
         values[i] = min + normals[i] * range;
@@ -169,7 +207,7 @@
 
 
 
-function createNormal(prop, generator) {
+  function createNormal(prop, generator) {
     if (!prop.inclusive) {
       return generator();
     } else {
@@ -266,7 +304,7 @@ function createNormal(prop, generator) {
    * ------------------------------------------------------------------------- */
 
 
-  let createInstance = {
+  const createInstance = {
     createGenerationZero(schema, generator) {
       let instance = { id: createId() };
       let keys = getSchemaKeys(schema);
@@ -875,7 +913,7 @@ function createNormal(prop, generator) {
     function nextGeneration(previousState, scores, config) {
       let nextState = {
         k: (previousState.k + 1) % config.generationSize,
-        counter: previousState.counter + (previousState.k === config.generationSize ? 1 : 0)
+        counter: previousState.counter + (previousState.k + 1 === config.generationSize ? 1 : 0)
       };
       // gradually get closer to zero temperature (but never hit it)
       let oldDef = previousState.curDef || previousState.generation[1];
@@ -1027,13 +1065,16 @@ function createNormal(prop, generator) {
     }
 
     function ghost_pause(ghost) {
-      if (ghost !== null)
-        ghost.old_frame = ghost.frame;
+      if (ghost === null)
+        return;
+      ghost.old_frame = ghost.frame;
       ghost_reset_ghost(ghost);
     }
 
     function ghost_resume(ghost) {
-      if (ghost !== null)
+      if (ghost === null)
+        return;
+      if (Number.isInteger(ghost.old_frame))
         ghost.frame = ghost.old_frame;
     }
 
@@ -1072,6 +1113,8 @@ function createNormal(prop, generator) {
       if (ghost === null)
         return;
       if (ghost.replay === null)
+        return;
+      if (ghost.replay.num_frames <= 0)
         return;
       ghost.frame++;
       if (ghost.frame >= ghost.replay.num_frames)
@@ -1258,7 +1301,7 @@ function createNormal(prop, generator) {
       lastState = lastState || {};
       let generationSize = scores.length
       let graphcanvas = graphElem;
-      let graphctx = graphcanvas.getContext("2d");
+      let graphctx = get2dContext(graphcanvas, "score graph");
       let graphwidth = 400;
       let graphheight = 250;
       let nextState = cw_storeGraphScores(
@@ -1465,15 +1508,19 @@ function createNormal(prop, generator) {
     this.car = car;
     this.car_def = car.def;
     let car_def = this.car_def;
-    let idleTimerBarElement = document.getElementById("idle_timer" + car_def.index);
+    let idleTimerBarElement = requireElementById("idle_timer" + car_def.index);
+    let idleTimerText = idleTimerBarElement.nextElementSibling;
+    if (!idleTimerText) {
+      throw new Error("Missing idle timer label for car " + car_def.index);
+    }
 
     this.frames = 0;
     this.alive = true;
     this.is_elite = car.def.is_elite;
     this.idleTimerBar = idleTimerBarElement.style;
-    this.idleTimerText = idleTimerBarElement.nextElementSibling;
+    this.idleTimerText = idleTimerText;
     this.idleTimerText.textContent = car_def.index.toString();
-    this.minimapmarker = document.getElementById("bar" + car_def.index);
+    this.minimapmarker = requireElementById("bar" + car_def.index);
     this.lastIdleTimerWidth = null;
     this.lastMarkerLeft = null;
 
@@ -1692,6 +1739,10 @@ function createNormal(prop, generator) {
         if (destroyed) {
           return;
         }
+        for (let i = 0; i < cars.length; i++) {
+          destroyCarBody(cars[i].car);
+        }
+        alivecars.length = 0;
         b2.destroyWorld(scene.world);
         destroyed = true;
       },
@@ -1765,15 +1816,15 @@ function createNormal(prop, generator) {
   const skipTicks = Math.round(1000 / box2dfps);
   const maxFrameSkip = skipTicks * 2;
 
-  const canvas = document.getElementById("mainbox");
-  const ctx = canvas.getContext("2d");
-  const generationMeter = document.getElementById("generation");
-  const populationMeter = document.getElementById("population");
-  const carsElem = document.getElementById("cars");
-  const topScoresElem = document.getElementById("topscores");
-  const graphCanvas = document.getElementById("graphcanvas");
-  const seedInput = document.getElementById("newseed");
-  const idleTimerElem = document.getElementById("idle_timer");
+  const canvas = requireElementById("mainbox");
+  const ctx = get2dContext(canvas, "main simulation");
+  const generationMeter = requireElementById("generation");
+  const populationMeter = requireElementById("population");
+  const carsElem = requireElementById("cars");
+  const topScoresElem = requireElementById("topscores");
+  const graphCanvas = requireElementById("graphcanvas");
+  const seedInput = requireElementById("newseed");
+  const idleTimerElem = requireElementById("idle_timer");
 
   const camera = {
     speed: 0.05,
@@ -1784,15 +1835,15 @@ function createNormal(prop, generator) {
     zoom: 70
   }
 
-  const minimapcamera = document.getElementById("minimapcamera").style;
-  const minimapholder = document.querySelector("#minimapholder");
+  const minimapcamera = requireElementById("minimapcamera").style;
+  const minimapholder = requireElementById("minimapholder");
 
-  const minimapcanvas = document.getElementById("minimap");
-  const minimapctx = minimapcanvas.getContext("2d");
+  const minimapcanvas = requireElementById("minimap");
+  const minimapctx = get2dContext(minimapcanvas, "minimap");
   const minimapscale = 3;
   let minimapfogdistance = 0;
   let lastFloorSeed = null;
-  const fogdistance = document.getElementById("minimapfog").style;
+  const fogdistance = requireElementById("minimapfog").style;
 
 
   const carConstants = carConstruct.carConstants();
@@ -1809,8 +1860,8 @@ function createNormal(prop, generator) {
     floorSeed: "cw_floorSeed",
   };
 
-  const distanceMeter = document.getElementById("distancemeter");
-  const heightMeter = document.getElementById("heightmeter");
+  const distanceMeter = requireElementById("distancemeter");
+  const heightMeter = requireElementById("heightmeter");
   let lastDistanceDisplay = null;
   let lastHeightDisplay = null;
   let lastMinimapCameraLeft = null;
@@ -1872,6 +1923,7 @@ function createNormal(prop, generator) {
     if (currentRunner && typeof currentRunner.destroy === "function") {
       currentRunner.destroy();
     }
+    currentRunner = null;
   }
 
   function showDistance(distance, height) {
@@ -1884,7 +1936,7 @@ function createNormal(prop, generator) {
       lastHeightDisplay = height;
     }
     if (distance > minimapfogdistance) {
-      fogdistance.width = 800 - Math.round(distance + 15) * minimapscale + "px";
+      fogdistance.width = Math.max(0, 800 - Math.round(distance + 15) * minimapscale) + "px";
       minimapfogdistance = distance;
     }
   }
@@ -2071,7 +2123,7 @@ function createNormal(prop, generator) {
 
   /* ==== END Drawing ======================================================== */
   /* ========================================================================= */
-  let uiListeners = {
+  const uiListeners = {
     preCarStep: function () {
       ghost_move_frame(ghost);
     },
@@ -2253,7 +2305,7 @@ function createNormal(prop, generator) {
     carsElem.textContent = "";
     topScoresElem.textContent = "";
     let _gc = graphCanvas;
-    cw_clearGraphics(_gc, _gc.getContext("2d"), 400, 250);
+    cw_clearGraphics(_gc, get2dContext(_gc, "score graph"), 400, 250);
     resetGraphState();
   }
 
@@ -2289,12 +2341,12 @@ function createNormal(prop, generator) {
     }
   }
 
-  document.querySelector("#fast-forward").addEventListener("click", fastForward);
-  document.querySelector("#save-progress").addEventListener("click", saveProgress);
-  document.querySelector("#restore-progress").addEventListener("click", restoreProgress);
-  document.querySelector("#toggle-display").addEventListener("click", toggleDisplay);
+  requireElementById("fast-forward").addEventListener("click", fastForward);
+  requireElementById("save-progress").addEventListener("click", saveProgress);
+  requireElementById("restore-progress").addEventListener("click", restoreProgress);
+  requireElementById("toggle-display").addEventListener("click", toggleDisplay);
 
-  document.querySelector("#new-population").addEventListener("click", function () {
+  requireElementById("new-population").addEventListener("click", function () {
     doDraw = true;
     cw_stopSimulation();
     cw_clearPopulationWorld();
@@ -2311,11 +2363,15 @@ function createNormal(prop, generator) {
   });
 
   function saveProgress() {
-    localStorage.setItem(STORAGE_KEYS.savedGeneration, JSON.stringify(generationState.generation));
-    localStorage.setItem(STORAGE_KEYS.genCounter, generationState.counter.toString());
-    localStorage.setItem(STORAGE_KEYS.ghost, JSON.stringify(ghost));
-    localStorage.setItem(STORAGE_KEYS.topScores, JSON.stringify(graphState.cw_topScores));
-    localStorage.setItem(STORAGE_KEYS.floorSeed, world_def.floorseed);
+    try {
+      localStorage.setItem(STORAGE_KEYS.savedGeneration, JSON.stringify(generationState.generation));
+      localStorage.setItem(STORAGE_KEYS.genCounter, generationState.counter.toString());
+      localStorage.setItem(STORAGE_KEYS.ghost, JSON.stringify(ghost));
+      localStorage.setItem(STORAGE_KEYS.topScores, JSON.stringify(graphState.cw_topScores));
+      localStorage.setItem(STORAGE_KEYS.floorSeed, world_def.floorseed);
+    } catch (error) {
+      alert("Progress could not be saved. Browser storage may be full or unavailable.");
+    }
   }
 
   function restoreProgress() {
@@ -2335,12 +2391,15 @@ function createNormal(prop, generator) {
         generationConfig.constants.schema,
         JSON.parse(savedGeneration)
       );
-      restoredCounter = Number.parseInt(localStorage.getItem(STORAGE_KEYS.genCounter) || "0", 10);
-      if (!Number.isFinite(restoredCounter)) {
-        restoredCounter = 0;
-      }
+      restoredCounter = Math.max(0, parseFiniteInteger(localStorage.getItem(STORAGE_KEYS.genCounter), 0));
       restoredGhost = JSON.parse(localStorage.getItem(STORAGE_KEYS.ghost) || "null");
       restoredTopScores = JSON.parse(localStorage.getItem(STORAGE_KEYS.topScores) || "[]");
+      if (restoredGhost !== null && typeof restoredGhost !== "object") {
+        restoredGhost = null;
+      }
+      if (!Array.isArray(restoredTopScores)) {
+        restoredTopScores = [];
+      }
       restoredFloorSeed = localStorage.getItem(STORAGE_KEYS.floorSeed) || world_def.floorseed;
     } catch (error) {
       alert("Saved progress could not be restored");
@@ -2367,7 +2426,7 @@ function createNormal(prop, generator) {
     cw_startSimulation();
   }
 
-  document.querySelector("#confirm-reset").addEventListener("click", cw_confirmResetWorld);
+  requireElementById("confirm-reset").addEventListener("click", cw_confirmResetWorld);
 
   function cw_confirmResetWorld() {
     if (confirm('Really reset world?')) {
@@ -2411,7 +2470,7 @@ function createNormal(prop, generator) {
     cw_resumeSimulation();
   }
 
-  document.querySelector("#toggle-ghost").addEventListener("click", function (event) {
+  requireElementById("toggle-ghost").addEventListener("click", function (event) {
     cw_toggleGhostReplay(event.currentTarget);
   });
 
@@ -2429,8 +2488,8 @@ function createNormal(prop, generator) {
   // initial stuff, only called once (hopefully)
   function cw_init() {
     // clone silver dot and idle timer bar
-    let mmm = document.getElementsByName('minimapmarker')[0];
-    let idleTimerBarTemplate = document.getElementsByName('idle_timer_bar')[0];
+    let mmm = requireNamedElement("minimapmarker");
+    let idleTimerBarTemplate = requireNamedElement("idle_timer_bar");
     let generationSize = generationConfig.constants.generationSize;
 
     for (let k = 0; k < generationSize; k++) {
@@ -2499,32 +2558,40 @@ function createNormal(prop, generator) {
   });
 
 
-  document.querySelector("#mutationrate").addEventListener("change", function (event) {
+  requireElementById("mutationrate").addEventListener("change", function (event) {
     cw_setMutation(event.currentTarget.value);
   });
 
-  document.querySelector("#mutationsize").addEventListener("change", function (event) {
+  requireElementById("mutationsize").addEventListener("change", function (event) {
     cw_setMutationRange(event.currentTarget.value);
   });
 
-  document.querySelector("#floor").addEventListener("change", function (event) {
+  requireElementById("floor").addEventListener("change", function (event) {
     cw_setMutableFloor(event.currentTarget.value);
   });
 
-  document.querySelector("#gravity").addEventListener("change", function (event) {
+  requireElementById("gravity").addEventListener("change", function (event) {
     cw_setGravity(event.currentTarget.value);
   });
 
-  document.querySelector("#elitesize").addEventListener("change", function (event) {
+  requireElementById("elitesize").addEventListener("change", function (event) {
     cw_setEliteSize(event.currentTarget.value);
   });
 
   function cw_setMutation(mutation) {
-    generationConfig.constants.gen_mutation = Number.parseFloat(mutation);
+    generationConfig.constants.gen_mutation = clamp(
+      parseFiniteFloat(mutation, generationConfig.constants.gen_mutation),
+      0,
+      1
+    );
   }
 
   function cw_setMutationRange(range) {
-    generationConfig.constants.mutation_range = Number.parseFloat(range);
+    generationConfig.constants.mutation_range = clamp(
+      parseFiniteFloat(range, generationConfig.constants.mutation_range),
+      0,
+      1
+    );
   }
 
   function cw_setMutableFloor(choice) {
@@ -2532,8 +2599,9 @@ function createNormal(prop, generator) {
   }
 
   function cw_setGravity(choice) {
-    world_def.gravity = vec2(0.0, -Number.parseFloat(choice));
-    let world = currentRunner.scene.world
+    let gravity = Math.max(0, parseFiniteFloat(choice, -world_def.gravity.y));
+    world_def.gravity = vec2(0.0, -gravity);
+    let world = currentRunner.scene.world;
     // CHECK GRAVITY CHANGES
     if (b2.getWorldGravity(world).y !== world_def.gravity.y) {
       b2.setWorldGravity(world, world_def.gravity);
@@ -2541,7 +2609,11 @@ function createNormal(prop, generator) {
   }
 
   function cw_setEliteSize(clones) {
-    generationConfig.constants.championLength = Number.parseInt(clones, 10);
+    generationConfig.constants.championLength = clamp(
+      parseFiniteInteger(clones, generationConfig.constants.championLength),
+      1,
+      generationConfig.constants.generationSize
+    );
   }
 
 // Expose to global scope for inline onclick handlers in index.html
