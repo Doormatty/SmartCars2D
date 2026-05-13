@@ -326,6 +326,9 @@
         normalizedParents[i] = normalizeGenome(schema, parents[i], generator);
         ancestry[i] = {
           id: normalizedParents[i].id,
+          index: Number.isInteger(normalizedParents[i].index) ? normalizedParents[i].index : null,
+          bornGeneration: Number.isFinite(normalizedParents[i].bornGeneration) ? normalizedParents[i].bornGeneration : null,
+          isElite: normalizedParents[i].is_elite === true,
           ancestry: normalizedParents[i].ancestry,
         };
       }
@@ -813,6 +816,7 @@
         let def = create.createGenerationZero(schema, function () {
           return Math.random()
         });
+        def.bornGeneration = 0;
         def.index = k;
         cw_carGeneration.push(def);
       }
@@ -835,6 +839,9 @@
       let newborn;
       for (let k = 0; k < champion_length; k++) {
         scores[k].def.is_elite = true;
+        if (!Number.isFinite(scores[k].def.bornGeneration)) {
+          scores[k].def.bornGeneration = previousState.counter;
+        }
         scores[k].def.index = k;
         newGeneration[k] = scores[k].def;
       }
@@ -849,6 +856,7 @@
         parentList.push(pair);
         newborn = makeChild(config, [scores[parent1].def, scores[parent2].def]);
         newborn = mutate(config, newborn);
+        newborn.bornGeneration = previousState.counter + 1;
         newborn.is_elite = false;
         newborn.index = k;
         newGeneration[k] = newborn;
@@ -1825,6 +1833,8 @@
   const graphCanvas = requireElementById("graphcanvas");
   const seedInput = requireElementById("newseed");
   const idleTimerElem = requireElementById("idle_timer");
+  const parentageSummaryElem = requireElementById("parentage-summary");
+  const parentageListElem = requireElementById("parentage-list");
 
   const camera = {
     speed: 0.05,
@@ -1866,6 +1876,7 @@
   let lastHeightDisplay = null;
   let lastMinimapCameraLeft = null;
   let lastMinimapCameraTop = null;
+  let lastParentageSignature = null;
 
   let leaderPosition = {
     x: 0, y: 0
@@ -1941,6 +1952,174 @@
     }
   }
 
+  function formatShortId(id) {
+    if (typeof id !== "string" || id.length === 0) {
+      return "Unknown";
+    }
+    return id.slice(0, 8).toUpperCase();
+  }
+
+  function formatGenerationLabel(generation) {
+    return Number.isFinite(generation) ? "G" + generation : "G?";
+  }
+
+  function formatCarLabel(index) {
+    return Number.isInteger(index) ? "Car " + index : "Car ?";
+  }
+
+  function getParentageCarInfo() {
+    if (!currentRunner) {
+      return null;
+    }
+    if (camera.target !== -1 && carMap.has(camera.target)) {
+      return camera.target;
+    }
+
+    let leaderIndex = Number.isInteger(leaderPosition.leader) ? leaderPosition.leader : 0;
+    let leaderCar = currentRunner.cars[leaderIndex];
+    if (leaderCar && carMap.has(leaderCar)) {
+      return leaderCar;
+    }
+
+    let bestCar = null;
+    let bestX = -Infinity;
+    carMap.forEach(function (cwCar, carInfo) {
+      if (!cwCar.alive) {
+        return;
+      }
+      let position = cwCar.getPosition();
+      if (position.x > bestX) {
+        bestX = position.x;
+        bestCar = carInfo;
+      }
+    });
+    return bestCar;
+  }
+
+  function getParentageSignature(carInfo, focusLabel) {
+    let generation = generationState ? generationState.counter : "?";
+    if (!carInfo) {
+      return "none|" + generation;
+    }
+    let def = carInfo.def || {};
+    return [
+      focusLabel,
+      carInfo.index,
+      def.id || "",
+      Number.isFinite(def.bornGeneration) ? def.bornGeneration : "?",
+      generation
+    ].join("|");
+  }
+
+  function appendParentageFact(label, value) {
+    let fact = document.createElement("div");
+    let name = document.createElement("span");
+    let data = document.createElement("strong");
+    fact.className = "parentage-fact";
+    name.textContent = label;
+    data.textContent = value;
+    fact.appendChild(name);
+    fact.appendChild(data);
+    parentageSummaryElem.appendChild(fact);
+  }
+
+  function createParentageRow(branch, id, meta, depth, founding) {
+    let row = document.createElement("li");
+    let marker = document.createElement("span");
+    let body = document.createElement("span");
+    let idElem = document.createElement("span");
+    let metaElem = document.createElement("span");
+
+    row.className = founding ? "parentage-row founding" : "parentage-row";
+    row.style.setProperty("--depth", Math.min(depth, 6).toString());
+    marker.className = "parentage-branch";
+    marker.textContent = branch;
+    idElem.className = "parentage-id";
+    idElem.textContent = id;
+    metaElem.className = "parentage-meta";
+    metaElem.textContent = meta;
+
+    body.appendChild(idElem);
+    body.appendChild(metaElem);
+    row.appendChild(marker);
+    row.appendChild(body);
+    return row;
+  }
+
+  function describeParentNode(parent) {
+    let details = [];
+    if (Number.isInteger(parent.index)) {
+      details.push(formatCarLabel(parent.index));
+    }
+    if (Number.isFinite(parent.bornGeneration)) {
+      details.push("born " + formatGenerationLabel(parent.bornGeneration));
+    }
+    if (parent.isElite === true || parent.is_elite === true) {
+      details.push("elite");
+    }
+    return details.length > 0 ? details.join(" / ") : "Recorded parent";
+  }
+
+  function appendParentageRows(ancestry, path, depth, state) {
+    if (!Array.isArray(ancestry)) {
+      return;
+    }
+    for (let i = 0; i < ancestry.length; i++) {
+      if (state.count >= state.limit) {
+        state.truncated = true;
+        return;
+      }
+      let parent = ancestry[i] || {};
+      let nextPath = path.concat(i + 1);
+      parentageListElem.appendChild(createParentageRow(
+        "P" + nextPath.join("."),
+        formatShortId(parent.id),
+        describeParentNode(parent),
+        depth,
+        false
+      ));
+      state.count++;
+      appendParentageRows(parent.ancestry, nextPath, depth + 1, state);
+    }
+  }
+
+  function renderParentagePanel() {
+    let carInfo = getParentageCarInfo();
+    let focusLabel = (carInfo && camera.target !== -1 && camera.target === carInfo) ? "Selected" : "Leader";
+    let signature = getParentageSignature(carInfo, focusLabel);
+    if (signature === lastParentageSignature) {
+      return;
+    }
+    lastParentageSignature = signature;
+    parentageSummaryElem.textContent = "";
+    parentageListElem.textContent = "";
+
+    if (!carInfo) {
+      appendParentageFact("Focus", "No car");
+      appendParentageFact("Race", generationState ? formatGenerationLabel(generationState.counter) : "G?");
+      parentageListElem.appendChild(createParentageRow("Base", "No active car", "Population empty", 0, true));
+      return;
+    }
+
+    let def = carInfo.def || {};
+    appendParentageFact("Focus", focusLabel + " " + formatCarLabel(carInfo.index));
+    appendParentageFact("Race", generationState ? formatGenerationLabel(generationState.counter) : "G?");
+    appendParentageFact("Born", formatGenerationLabel(def.bornGeneration));
+    appendParentageFact("ID", formatShortId(def.id));
+
+    let ancestry = Array.isArray(def.ancestry) ? def.ancestry : [];
+    if (ancestry.length === 0) {
+      parentageListElem.appendChild(createParentageRow("Base", "Founding vehicle", "No recorded parents", 0, true));
+      return;
+    }
+
+    let state = { count: 0, limit: 28, truncated: false };
+    appendParentageRows(ancestry, [], 0, state);
+    if (state.truncated) {
+      parentageListElem.appendChild(createParentageRow("...", "Earlier ancestors", "Hidden after " + state.limit + " rows", 0, true));
+    }
+  }
+
 
 
   /* === END Car ============================================================= */
@@ -1963,6 +2142,8 @@
     generationMeter.textContent = generationState.counter.toString();
     carsElem.textContent = "";
     populationMeter.textContent = generationConfig.constants.generationSize.toString();
+    lastParentageSignature = null;
+    renderParentagePanel();
   }
 
   /* ==== END Genration ====================================================== */
@@ -2005,6 +2186,7 @@
   function cw_setCameraTarget(k) {
     if (k === -1) {
       camera.target = -1;
+      renderParentagePanel();
       return;
     }
     // k can be a numeric index from the HTML onclick or a car info object
@@ -2018,6 +2200,7 @@
     } else {
       camera.target = k;
     }
+    renderParentagePanel();
   }
 
   function cw_setCameraPosition() {
@@ -2156,6 +2339,7 @@
         // leader is dead, find new leader
         cw_findLeader();
       }
+      renderParentagePanel();
     },
     generationEnd(results) {
       cleanupRound(results);
@@ -2202,6 +2386,9 @@
     if (position.x > leaderPosition.x) {
       leaderPosition = position;
       leaderPosition.leader = k;
+      if (camera.target === -1) {
+        renderParentagePanel();
+      }
     }
   }
 
@@ -2307,6 +2494,8 @@
     let _gc = graphCanvas;
     cw_clearGraphics(_gc, get2dContext(_gc, "score graph"), 400, 250);
     resetGraphState();
+    lastParentageSignature = null;
+    renderParentagePanel();
   }
 
   function cw_resetWorld() {
@@ -2339,6 +2528,8 @@
       car.replay = ghost_create_replay();
       ghost_add_replay_frame(car.replay, car.car.car);
     }
+    lastParentageSignature = null;
+    renderParentagePanel();
   }
 
   requireElementById("fast-forward").addEventListener("click", fastForward);

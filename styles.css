@@ -426,6 +426,7 @@ select:focus {
 
 .controls-surface,
 .settings-surface,
+.parentage-surface,
 .roster-surface {
     overflow: hidden;
 }
@@ -496,6 +497,105 @@ select:focus {
 
 .settings-table label {
     display: inline-block;
+}
+
+.parentage-panel {
+    display: grid;
+    gap: 10px;
+    padding: 14px;
+}
+
+.parentage-summary {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.parentage-fact {
+    min-width: 0;
+    min-height: 54px;
+    padding: 8px 10px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--surface-strong);
+}
+
+.parentage-fact span {
+    display: block;
+    color: var(--muted);
+    font-size: 0.68rem;
+    font-weight: 850;
+    text-transform: uppercase;
+}
+
+.parentage-fact strong {
+    display: block;
+    overflow: hidden;
+    margin-top: 3px;
+    font-size: 0.92rem;
+    line-height: 1.2;
+    font-weight: 850;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.parentage-list {
+    display: grid;
+    max-height: 220px;
+    gap: 7px;
+    padding: 0;
+    margin: 0;
+    overflow: auto;
+    list-style: none;
+}
+
+.parentage-row {
+    --depth: 0;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 8px;
+    align-items: start;
+    min-height: 48px;
+    padding: 8px 8px 8px calc(8px + var(--depth) * 14px);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: #fff;
+}
+
+.parentage-row.founding {
+    border-style: dashed;
+    color: var(--muted);
+}
+
+.parentage-branch {
+    min-width: 32px;
+    padding: 2px 5px;
+    border-radius: 5px;
+    background: rgba(15, 159, 143, 0.1);
+    color: var(--teal);
+    font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+    font-size: 0.72rem;
+    font-weight: 900;
+    text-align: center;
+}
+
+.parentage-id {
+    display: block;
+    overflow: hidden;
+    font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+    font-size: 0.83rem;
+    font-weight: 850;
+    line-height: 1.25;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.parentage-meta {
+    display: block;
+    margin-top: 2px;
+    color: var(--muted);
+    font-size: 0.73rem;
+    font-weight: 750;
 }
 
 #idle_timer {
