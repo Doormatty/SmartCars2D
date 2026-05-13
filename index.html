@@ -230,12 +230,12 @@
           <div class="panel-heading compact">
             <div>
               <p class="section-kicker">Fleet</p>
-              <h2>Car Health</h2>
+              <h2>Idle Timer</h2>
             </div>
             <input type="button" value="Watch Leader" onclick="cw_setCameraTarget(-1)" />
           </div>
 
-          <div id="health"></div>
+          <div id="idle_timer"></div>
           <div id="cars"></div>
         </section>
       </aside>
@@ -252,9 +252,9 @@
 
   <div name="minimapmarker" class="minimapmarker"></div>
 
-  <div name="healthbar" class="healthbar" onclick="cw_setCameraTarget(this.car_index)">
-    <div name="health" class="health"></div>
-    <div name="healthtext" class="healthtext"></div>
+  <div name="idle_timer_bar" class="idle_timer_bar" onclick="cw_setCameraTarget(this.car_index)">
+    <div name="idle_timer" class="idle_timer"></div>
+    <div name="idle_timer_text" class="idle_timer_text"></div>
   </div>
 
   <script src="lib/seedrandom.js"></script>

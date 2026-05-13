@@ -3,6 +3,8 @@
  * Serve index.html over HTTP so the Box2D wasm file can be fetched.
  * ========================================================================== */
 (async function () {
+  "use strict";
+
   if (typeof Box2D !== "function") {
     throw new Error("Box2D v3 wrapper failed to load");
   }
@@ -23,7 +25,11 @@
     return { x: v.x, y: v.y };
   }
 
-  let TWO_PI = 2 * Math.PI;
+  const TWO_PI = 2 * Math.PI;
+
+  function createId() {
+    return Math.random().toString(36).slice(2);
+  }
 
   function bodyHandle(entity) {
     return entity && entity.body ? entity.body : entity;
@@ -173,6 +179,87 @@ function createNormal(prop, generator) {
     }
   }
 
+  function getSchemaKeys(schema) {
+    return Object.keys(schema);
+  }
+
+  function getSchemaLength(schemaProp, key) {
+    let length = schemaProp.length;
+    if (!Number.isInteger(length) || length < 0) {
+      throw new Error("Schema key " + key + " must define a non-negative integer length");
+    }
+    return length;
+  }
+
+  function getSchemaGeneCount(schema) {
+    let keys = getSchemaKeys(schema);
+    let geneCount = 0;
+    for (let i = 0; i < keys.length; i++) {
+      let key = keys[i];
+      geneCount += getSchemaLength(schema[key], key);
+    }
+    return geneCount;
+  }
+
+  function clampNormal(value) {
+    if (value < 0) {
+      return 0;
+    }
+    if (value > 1) {
+      return 1;
+    }
+    return value;
+  }
+
+  function getDefaultNormal(schemaProp) {
+    if (Number.isFinite(schemaProp.defaultNormal)) {
+      return clampNormal(schemaProp.defaultNormal);
+    }
+    return 0.5;
+  }
+
+  function normalizeGeneValues(schemaProp, key, sourceValues, generator) {
+    let length = getSchemaLength(schemaProp, key);
+    let values = new Array(length);
+    let sourceIsArrayLike = sourceValues && typeof sourceValues.length === "number";
+    for (let i = 0; i < length; i++) {
+      let sourceValue = sourceIsArrayLike ? sourceValues[i] : undefined;
+      if (Number.isFinite(sourceValue)) {
+        values[i] = clampNormal(sourceValue);
+      } else if (typeof generator === "function") {
+        values[i] = createNormal(schemaProp, generator);
+      } else {
+        values[i] = getDefaultNormal(schemaProp);
+      }
+    }
+    return values;
+  }
+
+  function normalizeGenome(schema, source, generator) {
+    let clone = Object.assign({}, source || {});
+    if (typeof clone.id !== "string" || clone.id.length === 0) {
+      clone.id = createId();
+    }
+    let keys = getSchemaKeys(schema);
+    for (let i = 0; i < keys.length; i++) {
+      let key = keys[i];
+      clone[key] = normalizeGeneValues(schema[key], key, clone[key], generator);
+    }
+    return clone;
+  }
+
+  function normalizeGeneration(schema, sourceGeneration, generator) {
+    if (!Array.isArray(sourceGeneration)) {
+      throw new Error("Saved generation must be an array");
+    }
+    let normalized = new Array(sourceGeneration.length);
+    for (let i = 0; i < sourceGeneration.length; i++) {
+      normalized[i] = normalizeGenome(schema, sourceGeneration[i], generator);
+      normalized[i].index = i;
+    }
+    return normalized;
+  }
+
 
   /* -------------------------------------------------------------------------
    * machine-learning/create-instance.js
@@ -181,8 +268,8 @@ function createNormal(prop, generator) {
 
   let createInstance = {
     createGenerationZero(schema, generator) {
-      let instance = { id: Math.random().toString(32) };
-      let keys = Object.keys(schema);
+      let instance = { id: createId() };
+      let keys = getSchemaKeys(schema);
       for (let i = 0; i < keys.length; i++) {
         let key = keys[i];
         let schemaProp = schema[key];
@@ -190,27 +277,38 @@ function createNormal(prop, generator) {
       }
       return instance;
     },
-    createCrossBreed(schema, parents, parentChooser) {
-      let id = Math.random().toString(32);
+    createCrossBreed(schema, parents, parentChooser, generator) {
+      if (!Array.isArray(parents) || parents.length === 0) {
+        throw new Error("createCrossBreed requires at least one parent");
+      }
+      let id = createId();
+      let normalizedParents = new Array(parents.length);
       let ancestry = new Array(parents.length);
       for (let i = 0; i < parents.length; i++) {
+        normalizedParents[i] = normalizeGenome(schema, parents[i], generator);
         ancestry[i] = {
-          id: parents[i].id,
-          ancestry: parents[i].ancestry,
+          id: normalizedParents[i].id,
+          ancestry: normalizedParents[i].ancestry,
         };
       }
       let crossDef = {
         id: id,
         ancestry: ancestry
       };
-      let keys = Object.keys(schema);
+      let keys = getSchemaKeys(schema);
+      let geneCount = getSchemaGeneCount(schema);
+      let geneIndex = 0;
       for (let keyIndex = 0; keyIndex < keys.length; keyIndex++) {
         let key = keys[keyIndex];
         let schemaDef = schema[key];
         let values = new Array(schemaDef.length);
         for (let valueIndex = 0, l = schemaDef.length; valueIndex < l; valueIndex++) {
-          let p = parentChooser(id, key, parents);
-          values[valueIndex] = parents[p][key][valueIndex];
+          let p = parentChooser(id, key, valueIndex, geneIndex, normalizedParents, geneCount);
+          if (!Number.isInteger(p) || p < 0 || p >= normalizedParents.length) {
+            p = 0;
+          }
+          values[valueIndex] = normalizedParents[p][key][valueIndex];
+          geneIndex++;
         }
         crossDef[key] = values;
       }
@@ -218,15 +316,13 @@ function createNormal(prop, generator) {
     },
     createMutatedClone(schema, generator, parent, factor, chanceToMutate) {
       let mutateFn = random.mutateReplace;
-      let clone = {
-        id: parent.id,
-        ancestry: parent.ancestry
-      };
-      let keys = Object.keys(schema);
+      let normalizedParent = normalizeGenome(schema, parent, generator);
+      let clone = Object.assign({}, normalizedParent);
+      let keys = getSchemaKeys(schema);
       for (let i = 0; i < keys.length; i++) {
         let key = keys[i];
         let schemaProp = schema[key];
-        let originalValues = parent[key];
+        let originalValues = normalizedParent[key];
         clone[key] = mutateFn(
           schemaProp, generator, originalValues, factor, chanceToMutate
         );
@@ -234,15 +330,13 @@ function createNormal(prop, generator) {
       return clone;
     },
     applyTypes(schema, parent) {
-      let clone = {
-        id: parent.id,
-        ancestry: parent.ancestry
-      };
-      let keys = Object.keys(schema);
+      let normalizedParent = normalizeGenome(schema, parent);
+      let clone = Object.assign({}, normalizedParent);
+      let keys = getSchemaKeys(schema);
       for (let i = 0; i < keys.length; i++) {
         let key = keys[i];
         let schemaProp = schema[key];
-        let originalValues = parent[key];
+        let originalValues = normalizedParent[key];
         let values;
         switch (schemaProp.type) {
           case "shuffle":
@@ -264,7 +358,7 @@ function createNormal(prop, generator) {
   /* -------------------------------------------------------------------------
    * car-schema/car-constants.json (inlined)
    * ------------------------------------------------------------------------- */
-  let carConstantsData = {
+  const carConstantsData = {
     "wheelCount": 2,
     "wheelMinRadius": 0.2,
     "wheelRadiusRange": 0.5,
@@ -276,19 +370,75 @@ function createNormal(prop, generator) {
     "chassisAxisRange": 1.1
   };
 
+  const CHASSIS_VERTEX_BLUEPRINT = [
+    { x: { gene: 0 }, y: 0 },
+    { x: { gene: 1 }, y: { gene: 2 } },
+    { x: 0, y: { gene: 3 } },
+    { x: { gene: 4, sign: -1 }, y: { gene: 5 } },
+    { x: { gene: 6, sign: -1 }, y: 0 },
+    { x: { gene: 7, sign: -1 }, y: { gene: 8, sign: -1 } },
+    { x: 0, y: { gene: 9, sign: -1 } },
+    { x: { gene: 10 }, y: { gene: 11, sign: -1 } },
+  ];
+
+  function getBlueprintGeneCount(blueprint) {
+    let maxGene = -1;
+    for (let i = 0; i < blueprint.length; i++) {
+      maxGene = Math.max(
+        maxGene,
+        getBlueprintAxisGene(blueprint[i].x),
+        getBlueprintAxisGene(blueprint[i].y)
+      );
+    }
+    return maxGene + 1;
+  }
+
+  function getBlueprintAxisGene(axis) {
+    if (typeof axis === "number") {
+      return -1;
+    }
+    if (!axis || !Number.isInteger(axis.gene) || axis.gene < 0) {
+      throw new Error("Chassis vertex blueprint axes must be numbers or non-negative gene references");
+    }
+    return axis.gene;
+  }
+
+  function createChassisVertexList(vertexGenes) {
+    let vertexList = new Array(CHASSIS_VERTEX_BLUEPRINT.length);
+    for (let i = 0; i < CHASSIS_VERTEX_BLUEPRINT.length; i++) {
+      let point = CHASSIS_VERTEX_BLUEPRINT[i];
+      vertexList[i] = vec2(
+        readChassisBlueprintAxis(point.x, vertexGenes),
+        readChassisBlueprintAxis(point.y, vertexGenes)
+      );
+    }
+    return vertexList;
+  }
+
+  function readChassisBlueprintAxis(axis, vertexGenes) {
+    if (typeof axis === "number") {
+      return axis;
+    }
+    let value = vertexGenes[axis.gene];
+    if (!Number.isFinite(value)) {
+      throw new Error("Missing chassis vertex gene " + axis.gene);
+    }
+    return value * (axis.sign || 1);
+  }
+
   /* -------------------------------------------------------------------------
    * car-schema/construct.js
    * ------------------------------------------------------------------------- */
 
-  let carConstruct = (function () {
-    let carConstants = carConstantsData;
+  const carConstruct = (function () {
+    const carConstants = carConstantsData;
 
     function worldDef() {
       let box2dfps = 60;
       return {
         gravity: { y: 0 }, doSleep: true, floorseed: "abc",
         maxFloorTiles: 200, mutable_floor: false, motorSpeed: 20,
-        box2dfps: box2dfps, max_car_health: box2dfps * 10,
+        box2dfps: box2dfps, max_idle_timer: box2dfps * 10,
         tileDimensions: { width: 1.5, height: 0.15 }
       };
     }
@@ -297,9 +447,9 @@ function createNormal(prop, generator) {
       return {
         wheel_radius: { type: "float", length: values.wheelCount, min: values.wheelMinRadius, range: values.wheelRadiusRange, factor: 1 },
         wheel_density: { type: "float", length: values.wheelCount, min: values.wheelMinDensity, range: values.wheelDensityRange, factor: 1 },
-        chassis_density: { type: "float", length: 1, min: values.chassisDensityRange, range: values.chassisMinDensity, factor: 1 },
-        vertex_list: { type: "float", length: 12, min: values.chassisMinAxis, range: values.chassisAxisRange, factor: 1 },
-        wheel_vertex: { type: "shuffle", length: 8, limit: values.wheelCount, factor: 1 },
+        chassis_density: { type: "float", length: 1, min: values.chassisMinDensity, range: values.chassisDensityRange, factor: 1 },
+        vertex_list: { type: "float", length: getBlueprintGeneCount(CHASSIS_VERTEX_BLUEPRINT), min: values.chassisMinAxis, range: values.chassisAxisRange, factor: 1 },
+        wheel_vertex: { type: "shuffle", length: CHASSIS_VERTEX_BLUEPRINT.length, limit: values.wheelCount, factor: 1 },
       };
     }
     return { worldDef: worldDef, carConstants: getCarConstants, generateSchema: generateSchema };
@@ -360,18 +510,8 @@ function createNormal(prop, generator) {
     return instance;
   }
 
-  function createChassis(world, vertexs, density) {
-
-    let vertex_list = [
-      vec2(vertexs[0], 0),
-      vec2(vertexs[1], vertexs[2]),
-      vec2(0, vertexs[3]),
-      vec2(-vertexs[4], vertexs[5]),
-      vec2(-vertexs[6], 0),
-      vec2(-vertexs[7], -vertexs[8]),
-      vec2(0, -vertexs[9]),
-      vec2(vertexs[10], -vertexs[11])
-    ];
+  function createChassis(world, vertexGenes, density) {
+    let vertex_list = createChassisVertexList(vertexGenes);
 
     let chassis = {
       body: b2.createBody(world, {
@@ -382,14 +522,9 @@ function createNormal(prop, generator) {
       triangles: [],
     };
 
-    createChassisPart(chassis, vertex_list[0], vertex_list[1], density);
-    createChassisPart(chassis, vertex_list[1], vertex_list[2], density);
-    createChassisPart(chassis, vertex_list[2], vertex_list[3], density);
-    createChassisPart(chassis, vertex_list[3], vertex_list[4], density);
-    createChassisPart(chassis, vertex_list[4], vertex_list[5], density);
-    createChassisPart(chassis, vertex_list[5], vertex_list[6], density);
-    createChassisPart(chassis, vertex_list[6], vertex_list[7], density);
-    createChassisPart(chassis, vertex_list[7], vertex_list[0], density);
+    for (let i = 0; i < vertex_list.length; i++) {
+      createChassisPart(chassis, vertex_list[i], vertex_list[(i + 1) % vertex_list.length], density);
+    }
 
     return chassis;
   }
@@ -446,7 +581,7 @@ function createNormal(prop, generator) {
    * ------------------------------------------------------------------------- */
 
 
-  let carRun = {
+  const carRun = {
     getInitialState: getInitialState,
     updateState: updateState,
     getStatus: getStatus,
@@ -456,7 +591,7 @@ function createNormal(prop, generator) {
   function getInitialState(world_def) {
     return {
       frames: 0,
-      health: world_def.max_car_health,
+      idle_timer: world_def.max_idle_timer,
       maxPositiony: 0,
       minPositiony: 0,
       maxPositionx: 0,
@@ -464,14 +599,14 @@ function createNormal(prop, generator) {
   }
 
   function updateState(constants, worldConstruct, state) {
-    if (state.health <= 0) {
+    if (state.idle_timer <= 0) {
       throw new Error("Already Dead");
     }
     if (state.maxPositionx > constants.finishLine) {
       throw new Error("already Finished");
     }
 
-    // check health
+    // The idle timer resets on forward progress and drains while stalled.
     let position = getBodyPosition(worldConstruct.chassis);
     // check if car reached end of the path
     let nextState = {
@@ -482,17 +617,17 @@ function createNormal(prop, generator) {
     };
 
     if (position.x > constants.finishLine) {
-      nextState.health = state.health;
+      nextState.idle_timer = state.idle_timer;
       return nextState;
     }
 
     if (position.x > state.maxPositionx + 0.02) {
-      nextState.health = constants.max_car_health;
+      nextState.idle_timer = constants.max_idle_timer;
       return nextState;
     }
-    nextState.health = state.health - 1;
+    nextState.idle_timer = state.idle_timer - 1;
     if (Math.abs(getBodyVelocity(worldConstruct.chassis).x) < 0.001) {
-      nextState.health -= 5;
+      nextState.idle_timer -= 5;
     }
     return nextState;
   }
@@ -504,7 +639,7 @@ function createNormal(prop, generator) {
   }
 
   function hasFailed(state /*, constants */) {
-    return state.health <= 0;
+    return state.idle_timer <= 0;
   }
   function hasSuccess(state, constants) {
     return state.maxPositionx > constants.finishLine;
@@ -547,42 +682,42 @@ function createNormal(prop, generator) {
   /* -------------------------------------------------------------------------
    * generation-config/pickParent.js
    * ------------------------------------------------------------------------- */
-  let nAttributes = 15;
-
-
-  function pickParent(currentChoices, chooseId, key /* , parents */) {
+  function pickParent(currentChoices, chooseId, key, valueIndex, geneIndex, parents, geneCount) {
     if (!currentChoices.has(chooseId)) {
-      currentChoices.set(chooseId, initializePick())
+      currentChoices.set(chooseId, initializePick(geneCount))
     }
 
     let state = currentChoices.get(chooseId);
-    state.i++
-    state.curparent = cw_chooseParent(state);
+    state.curparent = cw_chooseParent(state, geneIndex);
     return state.curparent;
 
-    function cw_chooseParent(state) {
+    function cw_chooseParent(state, attributeIndex) {
       let curparent = state.curparent;
-      let attributeIndex = state.i;
       let swapPoint1 = state.swapPoint1
       let swapPoint2 = state.swapPoint2
-      if ((swapPoint1 == attributeIndex) || (swapPoint2 == attributeIndex)) {
-        return curparent == 1 ? 0 : 1
+      if ((swapPoint1 === attributeIndex) || (swapPoint2 === attributeIndex)) {
+        return curparent === 1 ? 0 : 1
       }
       return curparent
     }
 
-    function initializePick() {
+    function initializePick(totalGenes) {
       let curparent = 0;
-
-      let swapPoint1 = Math.floor(Math.random() * (nAttributes));
-      let swapPoint2 = swapPoint1;
-      while (swapPoint2 == swapPoint1) {
-        swapPoint2 = Math.floor(Math.random() * (nAttributes));
+      if (!Number.isInteger(totalGenes) || totalGenes < 2) {
+        return {
+          curparent: curparent,
+          swapPoint1: -1,
+          swapPoint2: -1
+        }
       }
-      let i = 0;
+
+      let swapPoint1 = Math.floor(Math.random() * totalGenes);
+      let swapPoint2 = swapPoint1;
+      while (swapPoint2 === swapPoint1) {
+        swapPoint2 = Math.floor(Math.random() * totalGenes);
+      }
       return {
         curparent: curparent,
-        i: i,
         swapPoint1: swapPoint1,
         swapPoint2: swapPoint2
       }
@@ -604,10 +739,10 @@ function createNormal(prop, generator) {
    * generation-config/index.js
    * ------------------------------------------------------------------------- */
 
-  let generationConfig = (function () {
-    let carConstants = carConstruct.carConstants();
-    let schema = carConstruct.generateSchema(carConstants);
-    let constants = {
+  const generationConfig = (function () {
+    const carConstants = carConstruct.carConstants();
+    const schema = carConstruct.generateSchema(carConstants);
+    const constants = {
       generationSize: 20, schema: schema, championLength: 1,
       mutation_range: 1, gen_mutation: 0.05
     };
@@ -627,8 +762,8 @@ function createNormal(prop, generator) {
   /* -------------------------------------------------------------------------
    * machine-learning/genetic-algorithm/manage-round.js
    * ------------------------------------------------------------------------- */
-  let manageRound = (function () {
-    let create = createInstance;
+  const manageRound = (function () {
+    const create = createInstance;
 
 
 
@@ -669,7 +804,7 @@ function createNormal(prop, generator) {
       for (let k = champion_length; k < generationSize; k++) {
         let parent1 = selectFromAllParents(scores, parentList);
         let parent2 = parent1;
-        while (parent2 == parent1) {
+        while (parent2 === parent1) {
           parent2 = selectFromAllParents(scores, parentList, parent1);
         }
         let pair = [parent1, parent2]
@@ -690,8 +825,9 @@ function createNormal(prop, generator) {
 
     function makeChild(config, parents) {
       let schema = config.schema,
-        pickParent = config.pickParent;
-      return create.createCrossBreed(schema, parents, pickParent)
+        pickParent = config.pickParent,
+        generateRandom = config.generateRandom;
+      return create.createCrossBreed(schema, parents, pickParent, generateRandom)
     }
 
 
@@ -716,8 +852,8 @@ function createNormal(prop, generator) {
   /* -------------------------------------------------------------------------
    * machine-learning/simulated-annealing/manage-round.js
    * ------------------------------------------------------------------------- */
-  let manageRoundSA = (function () {
-    let create = createInstance;
+  const manageRoundSA = (function () {
+    const create = createInstance;
 
 
 
@@ -749,7 +885,7 @@ function createNormal(prop, generator) {
       let newScore = scores[0].score.v;
 
 
-      let temp = Math.pow(Math.E, -nextState.counter / config.generationSize);
+      let temp = Math.exp(-nextState.counter / config.generationSize);
 
       let scoreDiff = newScore - oldScore;
       // If the next point is higher, change location
@@ -852,8 +988,8 @@ function createNormal(prop, generator) {
   /* -------------------------------------------------------------------------
    * ghost/index.js
    * ------------------------------------------------------------------------- */
-  let ghost_fns = (function () {
-    let enable_ghost = true;
+  const ghost_fns = (function () {
+    const enable_ghost = true;
 
 
 
@@ -885,30 +1021,30 @@ function createNormal(prop, generator) {
     function ghost_reset_ghost(ghost) {
       if (!enable_ghost)
         return;
-      if (ghost == null)
+      if (ghost === null)
         return;
       ghost.frame = 0;
     }
 
     function ghost_pause(ghost) {
-      if (ghost != null)
+      if (ghost !== null)
         ghost.old_frame = ghost.frame;
       ghost_reset_ghost(ghost);
     }
 
     function ghost_resume(ghost) {
-      if (ghost != null)
+      if (ghost !== null)
         ghost.frame = ghost.old_frame;
     }
 
     function ghost_get_position(ghost) {
       if (!enable_ghost)
         return;
-      if (ghost == null)
+      if (ghost === null)
         return;
       if (ghost.frame < 0)
         return;
-      if (ghost.replay == null)
+      if (ghost.replay === null)
         return;
       let frame = ghost.replay.frames[ghost.frame];
       if (!frame) return;
@@ -918,9 +1054,9 @@ function createNormal(prop, generator) {
     function ghost_compare_to_replay(replay, ghost, max) {
       if (!enable_ghost)
         return;
-      if (ghost == null)
+      if (ghost === null)
         return;
-      if (replay == null)
+      if (replay === null)
         return;
 
       if (ghost.dist < max) {
@@ -933,9 +1069,9 @@ function createNormal(prop, generator) {
     function ghost_move_frame(ghost) {
       if (!enable_ghost)
         return;
-      if (ghost == null)
+      if (ghost === null)
         return;
-      if (ghost.replay == null)
+      if (ghost.replay === null)
         return;
       ghost.frame++;
       if (ghost.frame >= ghost.replay.num_frames)
@@ -945,7 +1081,7 @@ function createNormal(prop, generator) {
     function ghost_add_replay_frame(replay, car) {
       if (!enable_ghost)
         return;
-      if (replay == null)
+      if (replay === null)
         return;
 
       let frame = ghost_get_frame(car);
@@ -957,11 +1093,11 @@ function createNormal(prop, generator) {
       let zoom = camera.zoom;
       if (!enable_ghost)
         return;
-      if (ghost == null)
+      if (ghost === null)
         return;
       if (ghost.frame < 0)
         return;
-      if (ghost.replay == null)
+      if (ghost.replay === null)
         return;
 
       let frame = ghost.replay.frames[ghost.frame];
@@ -1089,16 +1225,14 @@ function createNormal(prop, generator) {
       k = 0;
     }
 
-
-    outer_loop:
-    for (k; k < cw_floorTiles.length; k++) {
+    for (; k < cw_floorTiles.length; k++) {
       let b = cw_floorTiles[k];
       let shapePosition = b.worldVertices[0].x;
       if ((shapePosition > (camera_x - 5)) && (shapePosition < (camera_x + 10))) {
         cw_drawWorldPoly(ctx, b.worldVertices, b.worldVertices.length);
       }
       if (shapePosition > camera_x + 10) {
-        break outer_loop;
+        break;
       }
     }
     ctx.fill();
@@ -1119,7 +1253,7 @@ function createNormal(prop, generator) {
    * ------------------------------------------------------------------------- */
 
 
-  let graph_fns = {
+  const graph_fns = {
     plotGraphs: function (graphElem, topScoresElem, scatterPlotElem, lastState, scores, config) {
       lastState = lastState || {};
       let generationSize = scores.length
@@ -1227,14 +1361,18 @@ function createNormal(prop, generator) {
 
   function cw_listTopScores(elem, state) {
     let cw_topScores = state.cw_topScores.slice().sort(function (a, b) {
-      if (a.v > b.v) {
-        return -1
-      } else {
-        return 1
+      if (a.v === b.v) {
+        return 0;
       }
+      return a.v > b.v ? -1 : 1;
     });
 
-    let rows = ["<b>Top Scores</b><br />"];
+    let fragment = document.createDocumentFragment();
+    let title = document.createElement("strong");
+    title.textContent = "Top Scores";
+    fragment.appendChild(title);
+    fragment.appendChild(document.createElement("br"));
+
     for (let k = 0; k < Math.min(10, cw_topScores.length); k++) {
       let topScore = cw_topScores[k];
       let n = "#" + (k + 1) + ":";
@@ -1243,9 +1381,10 @@ function createNormal(prop, generator) {
       let yrange = "h:" + Math.round(topScore.y2 * 100) / 100 + "/" + Math.round(topScore.y * 100) / 100 + "m";
       let gen = "(Gen " + cw_topScores[k].i + ")"
 
-      rows.push([n, score, distance, yrange, gen].join(" ") + "<br />");
+      fragment.appendChild(document.createTextNode([n, score, distance, yrange, gen].join(" ")));
+      fragment.appendChild(document.createElement("br"));
     }
-    elem.innerHTML = rows.join("");
+    elem.replaceChildren(fragment);
   }
 
   /* -------------------------------------------------------------------------
@@ -1314,11 +1453,11 @@ function createNormal(prop, generator) {
    * ------------------------------------------------------------------------- */
 
 
-  let run = carRun;
+  const run = carRun;
 
   /* ========================================================================= */
   /* === Car ================================================================= */
-  let cw_Car = function () {
+  const cw_Car = function () {
     this.__constructor.apply(this, arguments);
   }
 
@@ -1326,25 +1465,26 @@ function createNormal(prop, generator) {
     this.car = car;
     this.car_def = car.def;
     let car_def = this.car_def;
+    let idleTimerBarElement = document.getElementById("idle_timer" + car_def.index);
 
     this.frames = 0;
     this.alive = true;
     this.is_elite = car.def.is_elite;
-    this.healthBar = document.getElementById("health" + car_def.index).style;
-    this.healthBarText = document.getElementById("health" + car_def.index).nextSibling.nextSibling;
-    this.healthBarText.innerHTML = car_def.index;
+    this.idleTimerBar = idleTimerBarElement.style;
+    this.idleTimerText = idleTimerBarElement.nextElementSibling;
+    this.idleTimerText.textContent = car_def.index.toString();
     this.minimapmarker = document.getElementById("bar" + car_def.index);
-    this.lastHealthWidth = null;
+    this.lastIdleTimerWidth = null;
     this.lastMarkerLeft = null;
 
     if (this.is_elite) {
-      this.healthBar.backgroundColor = "#2563eb";
+      this.idleTimerBar.backgroundColor = "#2563eb";
       this.minimapmarker.style.borderLeft = "1px solid #2563eb";
-      this.minimapmarker.innerHTML = car_def.index;
+      this.minimapmarker.textContent = car_def.index.toString();
     } else {
-      this.healthBar.backgroundColor = "#d49718";
+      this.idleTimerBar.backgroundColor = "#d49718";
       this.minimapmarker.style.borderLeft = "1px solid #d49718";
-      this.minimapmarker.innerHTML = car_def.index;
+      this.minimapmarker.textContent = car_def.index.toString();
     }
 
   }
@@ -1356,19 +1496,19 @@ function createNormal(prop, generator) {
   cw_Car.prototype.kill = function (currentRunner, constants) {
     this.minimapmarker.style.borderLeft = "1px solid #aeb8bd";
     let finishLine = currentRunner.scene.finishLine
-    let max_car_health = constants.max_car_health;
+    let max_idle_timer = constants.max_idle_timer;
     let status = run.getStatus(this.car.state, {
       finishLine: finishLine,
-      max_car_health: max_car_health,
+      max_idle_timer: max_idle_timer,
     })
     switch (status) {
       case 1: {
-        this.healthBar.width = "0";
+        this.idleTimerBar.width = "0";
         break
       }
       case -1: {
-        this.healthBarText.innerHTML = "&dagger;";
-        this.healthBar.width = "0";
+        this.idleTimerText.textContent = "\u2020";
+        this.idleTimerBar.width = "0";
         break
       }
     }
@@ -1530,16 +1670,17 @@ function createNormal(prop, generator) {
       world_def.floorseed = btoa(Math.seedrandom());
     }
 
+    let normalizedDefs = normalizeGeneration(world_def.schema, defs);
     let scene = setupScene(world_def);
     world_def.finishLine = scene.finishLine;
     let destroyed = false;
     b2.step(scene.world, 1 / world_def.box2dfps, 4);
-    let cars = new Array(defs.length);
-    for (let i = 0; i < defs.length; i++) {
+    let cars = new Array(normalizedDefs.length);
+    for (let i = 0; i < normalizedDefs.length; i++) {
       cars[i] = {
         index: i,
-        def: defs[i],
-        car: defToCar(defs[i], scene.world, world_def),
+        def: normalizedDefs[i],
+        car: defToCar(normalizedDefs[i], scene.world, world_def),
         state: carRun.getInitialState(world_def)
       };
     }
@@ -1598,43 +1739,43 @@ function createNormal(prop, generator) {
 
 
 
-  let plot_graphs = graph_fns.plotGraphs;
+  const plot_graphs = graph_fns.plotGraphs;
 
-  let ghost_draw_frame = ghost_fns.ghost_draw_frame;
-  let ghost_create_ghost = ghost_fns.ghost_create_ghost;
-  let ghost_add_replay_frame = ghost_fns.ghost_add_replay_frame;
-  let ghost_compare_to_replay = ghost_fns.ghost_compare_to_replay;
-  let ghost_get_position = ghost_fns.ghost_get_position;
-  let ghost_move_frame = ghost_fns.ghost_move_frame;
-  let ghost_reset_ghost = ghost_fns.ghost_reset_ghost
-  let ghost_pause = ghost_fns.ghost_pause;
-  let ghost_resume = ghost_fns.ghost_resume;
-  let ghost_create_replay = ghost_fns.ghost_create_replay;
+  const ghost_draw_frame = ghost_fns.ghost_draw_frame;
+  const ghost_create_ghost = ghost_fns.ghost_create_ghost;
+  const ghost_add_replay_frame = ghost_fns.ghost_add_replay_frame;
+  const ghost_compare_to_replay = ghost_fns.ghost_compare_to_replay;
+  const ghost_get_position = ghost_fns.ghost_get_position;
+  const ghost_move_frame = ghost_fns.ghost_move_frame;
+  const ghost_reset_ghost = ghost_fns.ghost_reset_ghost
+  const ghost_pause = ghost_fns.ghost_pause;
+  const ghost_resume = ghost_fns.ghost_resume;
+  const ghost_create_replay = ghost_fns.ghost_create_replay;
 
   let ghost;
-  let carMap = new Map();
+  const carMap = new Map();
 
   let doDraw = true;
   let cw_paused = false;
   let cw_animationFrameId = null;
   let cw_runningInterval = null;
 
-  let box2dfps = 60;
-  let screenfps = 60;
-  let skipTicks = Math.round(1000 / box2dfps);
-  let maxFrameSkip = skipTicks * 2;
+  const box2dfps = 60;
+  const screenfps = 60;
+  const skipTicks = Math.round(1000 / box2dfps);
+  const maxFrameSkip = skipTicks * 2;
 
-  let canvas = document.getElementById("mainbox");
-  let ctx = canvas.getContext("2d");
-  let generationMeter = document.getElementById("generation");
-  let populationMeter = document.getElementById("population");
-  let carsElem = document.getElementById("cars");
-  let topScoresElem = document.getElementById("topscores");
-  let graphCanvas = document.getElementById("graphcanvas");
-  let seedInput = document.getElementById("newseed");
-  let healthElem = document.getElementById("health");
+  const canvas = document.getElementById("mainbox");
+  const ctx = canvas.getContext("2d");
+  const generationMeter = document.getElementById("generation");
+  const populationMeter = document.getElementById("population");
+  const carsElem = document.getElementById("cars");
+  const topScoresElem = document.getElementById("topscores");
+  const graphCanvas = document.getElementById("graphcanvas");
+  const seedInput = document.getElementById("newseed");
+  const idleTimerElem = document.getElementById("idle_timer");
 
-  let camera = {
+  const camera = {
     speed: 0.05,
     pos: {
       x: 0, y: 2
@@ -1643,26 +1784,33 @@ function createNormal(prop, generator) {
     zoom: 70
   }
 
-  let minimapcamera = document.getElementById("minimapcamera").style;
-  let minimapholder = document.querySelector("#minimapholder");
+  const minimapcamera = document.getElementById("minimapcamera").style;
+  const minimapholder = document.querySelector("#minimapholder");
 
-  let minimapcanvas = document.getElementById("minimap");
-  let minimapctx = minimapcanvas.getContext("2d");
-  let minimapscale = 3;
+  const minimapcanvas = document.getElementById("minimap");
+  const minimapctx = minimapcanvas.getContext("2d");
+  const minimapscale = 3;
   let minimapfogdistance = 0;
   let lastFloorSeed = null;
-  let fogdistance = document.getElementById("minimapfog").style;
+  const fogdistance = document.getElementById("minimapfog").style;
 
 
-  let carConstants = carConstruct.carConstants();
+  const carConstants = carConstruct.carConstants();
 
 
-  let max_car_health = box2dfps * 10;
+  const max_idle_timer = box2dfps * 10;
 
   let cw_ghostReplayInterval = null;
+  const STORAGE_KEYS = {
+    savedGeneration: "cw_savedGeneration",
+    genCounter: "cw_genCounter",
+    ghost: "cw_ghost",
+    topScores: "cw_topScores",
+    floorSeed: "cw_floorSeed",
+  };
 
-  let distanceMeter = document.getElementById("distancemeter");
-  let heightMeter = document.getElementById("heightmeter");
+  const distanceMeter = document.getElementById("distancemeter");
+  const heightMeter = document.getElementById("heightmeter");
   let lastDistanceDisplay = null;
   let lastHeightDisplay = null;
   let lastMinimapCameraLeft = null;
@@ -1679,7 +1827,7 @@ function createNormal(prop, generator) {
   // ======= WORLD STATE ======
 
 
-  let world_def = {
+  const world_def = {
     gravity: vec2(0.0, -9.81),
     doSleep: true,
     floorseed: btoa(Math.seedrandom()),
@@ -1688,7 +1836,7 @@ function createNormal(prop, generator) {
     mutable_floor: false,
     box2dfps: box2dfps,
     motorSpeed: 20,
-    max_car_health: max_car_health,
+    max_idle_timer: max_idle_timer,
     schema: generationConfig.constants.schema
   }
 
@@ -1728,11 +1876,11 @@ function createNormal(prop, generator) {
 
   function showDistance(distance, height) {
     if (distance !== lastDistanceDisplay) {
-      distanceMeter.innerHTML = distance + " meters<br />";
+      distanceMeter.textContent = distance + " meters";
       lastDistanceDisplay = distance;
     }
     if (height !== lastHeightDisplay) {
-      heightMeter.innerHTML = height + " meters";
+      heightMeter.textContent = height + " meters";
       lastHeightDisplay = height;
     }
     if (distance > minimapfogdistance) {
@@ -1760,9 +1908,9 @@ function createNormal(prop, generator) {
     leaderPosition = {
       x: 0, y: 0
     };
-    generationMeter.innerHTML = generationState.counter.toString();
-    carsElem.innerHTML = "";
-    populationMeter.innerHTML = generationConfig.constants.generationSize.toString();
+    generationMeter.textContent = generationState.counter.toString();
+    carsElem.textContent = "";
+    populationMeter.textContent = generationConfig.constants.generationSize.toString();
   }
 
   /* ==== END Genration ====================================================== */
@@ -1808,7 +1956,7 @@ function createNormal(prop, generator) {
       return;
     }
     // k can be a numeric index from the HTML onclick or a car info object
-    if (typeof k === 'number' && currentRunner) {
+    if (typeof k === "number" && currentRunner) {
       let carInfo = currentRunner.cars[k];
       if (carInfo && carMap.has(carInfo)) {
         camera.target = carInfo;
@@ -1939,7 +2087,7 @@ function createNormal(prop, generator) {
       cwCar.kill(currentRunner, world_def);
 
       // refocus camera to leader on death
-      if (camera.target == carInfo) {
+      if (camera.target === carInfo) {
         cw_setCameraTarget(-1);
       }
 
@@ -1950,9 +2098,9 @@ function createNormal(prop, generator) {
 
       cw_deadCars++;
       let generationSize = generationConfig.constants.generationSize;
-      populationMeter.innerHTML = (generationSize - cw_deadCars).toString();
+      populationMeter.textContent = (generationSize - cw_deadCars).toString();
 
-      if (leaderPosition.leader == k) {
+      if (leaderPosition.leader === k) {
         // leader is dead, find new leader
         cw_findLeader();
       }
@@ -1994,10 +2142,10 @@ function createNormal(prop, generator) {
       car.minimapmarker.style.left = markerLeft;
       car.lastMarkerLeft = markerLeft;
     }
-    let healthWidth = Math.round((car.car.state.health / max_car_health) * 100) + "%";
-    if (healthWidth !== car.lastHealthWidth) {
-      car.healthBar.width = healthWidth;
-      car.lastHealthWidth = healthWidth;
+    let idleTimerWidth = Math.round((car.car.state.idle_timer / max_idle_timer) * 100) + "%";
+    if (idleTimerWidth !== car.lastIdleTimerWidth) {
+      car.idleTimerBar.width = idleTimerWidth;
+      car.lastIdleTimerWidth = idleTimerWidth;
     }
     if (position.x > leaderPosition.x) {
       leaderPosition = position;
@@ -2073,13 +2221,17 @@ function createNormal(prop, generator) {
   }
 
   function cw_startSimulation() {
+    if (cw_animationFrameId !== null) {
+      return;
+    }
     cw_paused = false;
+    nextGameTick = Date.now();
     cw_animationFrameId = window.requestAnimationFrame(gameLoop);
   }
 
   function cw_stopSimulation() {
     cw_paused = true;
-    if (cw_animationFrameId) {
+    if (cw_animationFrameId !== null) {
       window.cancelAnimationFrame(cw_animationFrameId);
       cw_animationFrameId = null;
     }
@@ -2097,9 +2249,9 @@ function createNormal(prop, generator) {
   }
 
   function cw_resetPopulationUI() {
-    generationMeter.innerHTML = "";
-    carsElem.innerHTML = "";
-    topScoresElem.innerHTML = "";
+    generationMeter.textContent = "";
+    carsElem.textContent = "";
+    topScoresElem.textContent = "";
     let _gc = graphCanvas;
     cw_clearGraphics(_gc, _gc.getContext("2d"), 400, 250);
     resetGraphState();
@@ -2137,22 +2289,10 @@ function createNormal(prop, generator) {
     }
   }
 
-
-  document.querySelector("#fast-forward").addEventListener("click", function () {
-    fastForward()
-  });
-
-  document.querySelector("#save-progress").addEventListener("click", function () {
-    saveProgress()
-  });
-
-  document.querySelector("#restore-progress").addEventListener("click", function () {
-    restoreProgress()
-  });
-
-  document.querySelector("#toggle-display").addEventListener("click", function () {
-    toggleDisplay()
-  })
+  document.querySelector("#fast-forward").addEventListener("click", fastForward);
+  document.querySelector("#save-progress").addEventListener("click", saveProgress);
+  document.querySelector("#restore-progress").addEventListener("click", restoreProgress);
+  document.querySelector("#toggle-display").addEventListener("click", toggleDisplay);
 
   document.querySelector("#new-population").addEventListener("click", function () {
     doDraw = true;
@@ -2168,30 +2308,54 @@ function createNormal(prop, generator) {
     cw_drawMiniMap();
     resetCarUI();
     cw_startSimulation();
-  })
+  });
 
   function saveProgress() {
-    localStorage.cw_savedGeneration = JSON.stringify(generationState.generation);
-    localStorage.cw_genCounter = generationState.counter;
-    localStorage.cw_ghost = JSON.stringify(ghost);
-    localStorage.cw_topScores = JSON.stringify(graphState.cw_topScores);
-    localStorage.cw_floorSeed = world_def.floorseed;
+    localStorage.setItem(STORAGE_KEYS.savedGeneration, JSON.stringify(generationState.generation));
+    localStorage.setItem(STORAGE_KEYS.genCounter, generationState.counter.toString());
+    localStorage.setItem(STORAGE_KEYS.ghost, JSON.stringify(ghost));
+    localStorage.setItem(STORAGE_KEYS.topScores, JSON.stringify(graphState.cw_topScores));
+    localStorage.setItem(STORAGE_KEYS.floorSeed, world_def.floorseed);
   }
 
   function restoreProgress() {
-    if (typeof localStorage.cw_savedGeneration == 'undefined' || localStorage.cw_savedGeneration == null) {
+    let savedGeneration = localStorage.getItem(STORAGE_KEYS.savedGeneration);
+    if (savedGeneration === null) {
       alert("No saved progress found");
       return;
     }
+
+    let restoredGeneration;
+    let restoredCounter;
+    let restoredGhost;
+    let restoredTopScores;
+    let restoredFloorSeed;
+    try {
+      restoredGeneration = normalizeGeneration(
+        generationConfig.constants.schema,
+        JSON.parse(savedGeneration)
+      );
+      restoredCounter = Number.parseInt(localStorage.getItem(STORAGE_KEYS.genCounter) || "0", 10);
+      if (!Number.isFinite(restoredCounter)) {
+        restoredCounter = 0;
+      }
+      restoredGhost = JSON.parse(localStorage.getItem(STORAGE_KEYS.ghost) || "null");
+      restoredTopScores = JSON.parse(localStorage.getItem(STORAGE_KEYS.topScores) || "[]");
+      restoredFloorSeed = localStorage.getItem(STORAGE_KEYS.floorSeed) || world_def.floorseed;
+    } catch (error) {
+      alert("Saved progress could not be restored");
+      return;
+    }
+
     doDraw = true;
     cw_stopSimulation();
     cw_clearPopulationWorld();
     destroyCurrentRunner();
-    generationState.generation = JSON.parse(localStorage.cw_savedGeneration);
-    generationState.counter = localStorage.cw_genCounter;
-    ghost = JSON.parse(localStorage.cw_ghost);
-    graphState.cw_topScores = JSON.parse(localStorage.cw_topScores);
-    world_def.floorseed = localStorage.cw_floorSeed;
+    generationState.generation = restoredGeneration;
+    generationState.counter = restoredCounter;
+    ghost = restoredGhost;
+    graphState.cw_topScores = restoredTopScores;
+    world_def.floorseed = restoredFloorSeed;
     seedInput.value = world_def.floorseed;
 
     currentRunner = worldRun(world_def, generationState.generation, uiListeners);
@@ -2203,15 +2367,11 @@ function createNormal(prop, generator) {
     cw_startSimulation();
   }
 
-  document.querySelector("#confirm-reset").addEventListener("click", function () {
-    cw_confirmResetWorld()
-  })
+  document.querySelector("#confirm-reset").addEventListener("click", cw_confirmResetWorld);
 
   function cw_confirmResetWorld() {
     if (confirm('Really reset world?')) {
       cw_resetWorld();
-    } else {
-      return false;
     }
   }
 
@@ -2229,6 +2389,9 @@ function createNormal(prop, generator) {
   }
 
   function cw_startGhostReplay() {
+    if (cw_ghostReplayInterval !== null) {
+      return;
+    }
     if (!doDraw) {
       toggleDisplay();
     }
@@ -2237,6 +2400,9 @@ function createNormal(prop, generator) {
   }
 
   function cw_stopGhostReplay() {
+    if (cw_ghostReplayInterval === null) {
+      return;
+    }
     clearInterval(cw_ghostReplayInterval);
     cw_ghostReplayInterval = null;
     cw_findLeader();
@@ -2245,12 +2411,12 @@ function createNormal(prop, generator) {
     cw_resumeSimulation();
   }
 
-  document.querySelector("#toggle-ghost").addEventListener("click", function (e) {
-    cw_toggleGhostReplay(e.target)
-  })
+  document.querySelector("#toggle-ghost").addEventListener("click", function (event) {
+    cw_toggleGhostReplay(event.currentTarget);
+  });
 
   function cw_toggleGhostReplay(button) {
-    if (cw_ghostReplayInterval == null) {
+    if (cw_ghostReplayInterval === null) {
       cw_startGhostReplay();
       button.value = "Resume simulation";
     } else {
@@ -2262,9 +2428,9 @@ function createNormal(prop, generator) {
 
   // initial stuff, only called once (hopefully)
   function cw_init() {
-    // clone silver dot and health bar
+    // clone silver dot and idle timer bar
     let mmm = document.getElementsByName('minimapmarker')[0];
-    let hbar = document.getElementsByName('healthbar')[0];
+    let idleTimerBarTemplate = document.getElementsByName('idle_timer_bar')[0];
     let generationSize = generationConfig.constants.generationSize;
 
     for (let k = 0; k < generationSize; k++) {
@@ -2275,14 +2441,14 @@ function createNormal(prop, generator) {
       newbar.style.paddingTop = k * 9 + "px";
       minimapholder.appendChild(newbar);
 
-      // health bars
-      let newhealth = hbar.cloneNode(true);
-      newhealth.getElementsByTagName("DIV")[0].id = "health" + k;
-      newhealth.car_index = k;
-      healthElem.appendChild(newhealth);
+      // idle timer bars
+      let newIdleTimer = idleTimerBarTemplate.cloneNode(true);
+      newIdleTimer.getElementsByTagName("DIV")[0].id = "idle_timer" + k;
+      newIdleTimer.car_index = k;
+      idleTimerElem.appendChild(newIdleTimer);
     }
     mmm.parentNode.removeChild(mmm);
-    hbar.parentNode.removeChild(hbar);
+    idleTimerBarTemplate.parentNode.removeChild(idleTimerBarTemplate);
     world_def.floorseed = btoa(Math.seedrandom());
     cw_generationZero();
     ghost = ghost_create_ghost();
@@ -2294,28 +2460,16 @@ function createNormal(prop, generator) {
 
   }
 
-  function relMouseCoords(event) {
-    let totalOffsetX = 0;
-    let totalOffsetY = 0;
-    let canvasX = 0;
-    let canvasY = 0;
-    let currentElement = this;
-
-    do {
-      totalOffsetX += currentElement.offsetLeft - currentElement.scrollLeft;
-      totalOffsetY += currentElement.offsetTop - currentElement.scrollTop;
-      currentElement = currentElement.offsetParent
-    }
-    while (currentElement);
-
-    canvasX = event.pageX - totalOffsetX;
-    canvasY = event.pageY - totalOffsetY;
-
-    return { x: canvasX, y: canvasY }
+  function getRelativeCoords(event, element) {
+    let rect = element.getBoundingClientRect();
+    return {
+      x: event.clientX - rect.left,
+      y: event.clientY - rect.top
+    };
   }
-  HTMLDivElement.prototype.relMouseCoords = relMouseCoords;
-  minimapholder.onclick = function (event) {
-    let coords = minimapholder.relMouseCoords(event);
+
+  minimapholder.addEventListener("click", function (event) {
+    let coords = getRelativeCoords(event, minimapholder);
     let closest = null;
     let maxX = -Infinity;
     carMap.forEach(function (cwCar) {
@@ -2337,62 +2491,57 @@ function createNormal(prop, generator) {
       return;
     }
 
-    if (closest.x == maxX) { // focus on leader again
+    if (closest.x === maxX) { // focus on leader again
       cw_setCameraTarget(-1);
     } else {
       cw_setCameraTarget(closest.value);
     }
-  }
-
-
-  document.querySelector("#mutationrate").addEventListener("change", function (e) {
-    let elem = e.target
-    cw_setMutation(elem.options[elem.selectedIndex].value)
-  })
-
-  document.querySelector("#mutationsize").addEventListener("change", function (e) {
-    let elem = e.target
-    cw_setMutationRange(elem.options[elem.selectedIndex].value)
-  })
-
-  document.querySelector("#floor").addEventListener("change", function (e) {
-    let elem = e.target
-    cw_setMutableFloor(elem.options[elem.selectedIndex].value)
   });
 
-  document.querySelector("#gravity").addEventListener("change", function (e) {
-    let elem = e.target
-    cw_setGravity(elem.options[elem.selectedIndex].value)
-  })
 
-  document.querySelector("#elitesize").addEventListener("change", function (e) {
-    let elem = e.target
-    cw_setEliteSize(elem.options[elem.selectedIndex].value)
-  })
+  document.querySelector("#mutationrate").addEventListener("change", function (event) {
+    cw_setMutation(event.currentTarget.value);
+  });
+
+  document.querySelector("#mutationsize").addEventListener("change", function (event) {
+    cw_setMutationRange(event.currentTarget.value);
+  });
+
+  document.querySelector("#floor").addEventListener("change", function (event) {
+    cw_setMutableFloor(event.currentTarget.value);
+  });
+
+  document.querySelector("#gravity").addEventListener("change", function (event) {
+    cw_setGravity(event.currentTarget.value);
+  });
+
+  document.querySelector("#elitesize").addEventListener("change", function (event) {
+    cw_setEliteSize(event.currentTarget.value);
+  });
 
   function cw_setMutation(mutation) {
-    generationConfig.constants.gen_mutation = parseFloat(mutation);
+    generationConfig.constants.gen_mutation = Number.parseFloat(mutation);
   }
 
   function cw_setMutationRange(range) {
-    generationConfig.constants.mutation_range = parseFloat(range);
+    generationConfig.constants.mutation_range = Number.parseFloat(range);
   }
 
   function cw_setMutableFloor(choice) {
-    world_def.mutable_floor = (choice == 1);
+    world_def.mutable_floor = choice === "1";
   }
 
   function cw_setGravity(choice) {
-    world_def.gravity = vec2(0.0, -parseFloat(choice));
+    world_def.gravity = vec2(0.0, -Number.parseFloat(choice));
     let world = currentRunner.scene.world
     // CHECK GRAVITY CHANGES
-    if (b2.getWorldGravity(world).y != world_def.gravity.y) {
+    if (b2.getWorldGravity(world).y !== world_def.gravity.y) {
       b2.setWorldGravity(world, world_def.gravity);
     }
   }
 
   function cw_setEliteSize(clones) {
-    generationConfig.constants.championLength = parseInt(clones, 10);
+    generationConfig.constants.championLength = Number.parseInt(clones, 10);
   }
 
 // Expose to global scope for inline onclick handlers in index.html

@@ -498,14 +498,14 @@ select:focus {
     display: inline-block;
 }
 
-#health {
+#idle_timer {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 8px;
     padding: 14px;
 }
 
-.healthbar {
+.idle_timer_bar {
     position: relative;
     width: 100%;
     height: 24px;
@@ -516,14 +516,14 @@ select:focus {
     background: #eef3f1;
 }
 
-.healthbar .health {
+.idle_timer_bar .idle_timer {
     width: 100%;
     height: 100%;
     background: var(--amber);
     transition: width 120ms linear;
 }
 
-.healthbar .healthtext {
+.idle_timer_bar .idle_timer_text {
     position: absolute;
     inset: 0;
     display: grid;
@@ -561,7 +561,7 @@ select:focus {
 }
 
 body > .minimapmarker,
-body > .healthbar {
+body > .idle_timer_bar {
     display: none;
 }
 
@@ -629,7 +629,7 @@ body > .healthbar {
     .seed-actions,
     .status-strip,
     .buttons,
-    #health {
+    #idle_timer {
         grid-template-columns: 1fr;
     }
 
