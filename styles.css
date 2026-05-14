@@ -117,6 +117,12 @@ select {
     padding: 0 34px 0 10px;
 }
 
+input[type="range"] {
+    width: 100%;
+    min-width: 0;
+    accent-color: var(--teal);
+}
+
 input[type="text"]:focus,
 select:focus {
     border-color: var(--teal);
@@ -426,6 +432,7 @@ select:focus {
 
 .controls-surface,
 .settings-surface,
+.terrain-surface,
 .parentage-surface,
 .roster-surface {
     overflow: hidden;
@@ -497,6 +504,26 @@ select:focus {
 
 .settings-table label {
     display: inline-block;
+}
+
+.terrain-table td:first-child {
+    width: 38%;
+}
+
+.terrain-control {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 66px;
+    gap: 8px;
+    align-items: center;
+}
+
+.terrain-control output {
+    color: var(--ink);
+    font-size: 0.78rem;
+    font-weight: 850;
+    line-height: 1.2;
+    text-align: right;
+    white-space: nowrap;
 }
 
 .parentage-panel {

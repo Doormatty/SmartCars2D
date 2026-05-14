@@ -64,6 +64,44 @@
   }
 
   const TWO_PI = 2 * Math.PI;
+  const DEG_TO_RAD = Math.PI / 180;
+  const RAD_TO_DEG = 180 / Math.PI;
+
+  const TERRAIN_DEFAULTS = Object.freeze({
+    startFlatTiles: 3,
+    maxHeight: 6,
+    maxAngle: 50 * DEG_TO_RAD,
+    maxAngleStep: 7.5 * DEG_TO_RAD,
+    noise: 0.045,
+    heightBias: 0.032,
+    difficultyRamp: 1.55,
+    difficultyFloor: 0.58,
+    targetMinTiles: 3,
+    targetMaxTiles: 7,
+    targetShortening: 3,
+    flipChance: 0.78,
+    minAngleBase: 0.36,
+    minAngleDifficulty: 0.24,
+  });
+
+  function normalizeTerrainParameters(source) {
+    let terrain = Object.assign({}, TERRAIN_DEFAULTS, source || {});
+    terrain.startFlatTiles = clamp(parseFiniteInteger(terrain.startFlatTiles, TERRAIN_DEFAULTS.startFlatTiles), 0, 20);
+    terrain.maxHeight = clamp(parseFiniteFloat(terrain.maxHeight, TERRAIN_DEFAULTS.maxHeight), 2, 20);
+    terrain.maxAngle = clamp(parseFiniteFloat(terrain.maxAngle, TERRAIN_DEFAULTS.maxAngle), 20 * DEG_TO_RAD, 65 * DEG_TO_RAD);
+    terrain.maxAngleStep = clamp(parseFiniteFloat(terrain.maxAngleStep, TERRAIN_DEFAULTS.maxAngleStep), 1 * DEG_TO_RAD, 18 * DEG_TO_RAD);
+    terrain.noise = clamp(parseFiniteFloat(terrain.noise, TERRAIN_DEFAULTS.noise), 0, 0.12);
+    terrain.heightBias = clamp(parseFiniteFloat(terrain.heightBias, TERRAIN_DEFAULTS.heightBias), 0, 0.12);
+    terrain.difficultyRamp = clamp(parseFiniteFloat(terrain.difficultyRamp, TERRAIN_DEFAULTS.difficultyRamp), 0.2, 3);
+    terrain.difficultyFloor = clamp(parseFiniteFloat(terrain.difficultyFloor, TERRAIN_DEFAULTS.difficultyFloor), 0.2, 0.9);
+    terrain.targetMinTiles = clamp(parseFiniteInteger(terrain.targetMinTiles, TERRAIN_DEFAULTS.targetMinTiles), 1, 20);
+    terrain.targetMaxTiles = clamp(parseFiniteInteger(terrain.targetMaxTiles, TERRAIN_DEFAULTS.targetMaxTiles), terrain.targetMinTiles, 24);
+    terrain.targetShortening = clamp(parseFiniteFloat(terrain.targetShortening, TERRAIN_DEFAULTS.targetShortening), 0, 12);
+    terrain.flipChance = clamp(parseFiniteFloat(terrain.flipChance, TERRAIN_DEFAULTS.flipChance), 0, 1);
+    terrain.minAngleBase = clamp(parseFiniteFloat(terrain.minAngleBase, TERRAIN_DEFAULTS.minAngleBase), 0, 1);
+    terrain.minAngleDifficulty = clamp(parseFiniteFloat(terrain.minAngleDifficulty, TERRAIN_DEFAULTS.minAngleDifficulty), 0, 1);
+    return terrain;
+  }
 
   function createId() {
     return Math.random().toString(36).slice(2);
@@ -408,7 +446,20 @@
     "chassisDensityRange": 300,
     "chassisMinDensity": 30,
     "chassisMinAxis": 0.1,
-    "chassisAxisRange": 1.1
+    "chassisAxisRange": 1.1,
+    "suspensionMinTravel": 0.1,
+    "suspensionTravelRange": 0.5,
+    "suspensionMinStiffness": 1.25,
+    "suspensionStiffnessRange": 10.75,
+    "suspensionMinDamping": 0.18,
+    "suspensionDampingRange": 1.32,
+    "motorMinPower": 0.45,
+    "motorPowerRange": 1.95,
+    "motorMinGearing": 0.55,
+    "motorGearingRange": 1.35,
+    "motorDensityCost": 95,
+    "drivetrainNominalMass": 260,
+    "drivetrainReferenceWheelRadius": 0.45
   };
 
   const CHASSIS_VERTEX_BLUEPRINT = [
@@ -478,9 +529,10 @@
       let box2dfps = 60;
       return {
         gravity: { y: 0 }, doSleep: true, floorseed: "abc",
-        maxFloorTiles: 200, mutable_floor: false, motorSpeed: 20,
+        maxFloorTiles: 220, mutable_floor: false, motorSpeed: 20,
         box2dfps: box2dfps, max_idle_timer: box2dfps * 10,
-        tileDimensions: { width: 1.5, height: 0.15 }
+        tileDimensions: { width: 1.5, height: 0.15 },
+        terrain: normalizeTerrainParameters()
       };
     }
     function getCarConstants() { return carConstants; }
@@ -489,6 +541,11 @@
         wheel_radius: { type: "float", length: values.wheelCount, min: values.wheelMinRadius, range: values.wheelRadiusRange, factor: 1 },
         wheel_density: { type: "float", length: values.wheelCount, min: values.wheelMinDensity, range: values.wheelDensityRange, factor: 1 },
         chassis_density: { type: "float", length: 1, min: values.chassisMinDensity, range: values.chassisDensityRange, factor: 1 },
+        suspension_travel: { type: "float", length: values.wheelCount, min: values.suspensionMinTravel, range: values.suspensionTravelRange, factor: 1 },
+        suspension_stiffness: { type: "float", length: values.wheelCount, min: values.suspensionMinStiffness, range: values.suspensionStiffnessRange, factor: 1 },
+        suspension_damping: { type: "float", length: values.wheelCount, min: values.suspensionMinDamping, range: values.suspensionDampingRange, factor: 1 },
+        motor_power: { type: "float", length: 1, min: values.motorMinPower, range: values.motorPowerRange, factor: 1 },
+        motor_gearing: { type: "float", length: 1, min: values.motorMinGearing, range: values.motorGearingRange, factor: 1 },
         vertex_list: { type: "float", length: getBlueprintGeneCount(CHASSIS_VERTEX_BLUEPRINT), min: values.chassisMinAxis, range: values.chassisAxisRange, factor: 1 },
         wheel_vertex: { type: "shuffle", length: CHASSIS_VERTEX_BLUEPRINT.length, limit: values.wheelCount, factor: 1 },
       };
@@ -504,8 +561,9 @@
     let car_def = createInstance.applyTypes(constants.schema, normal_def)
     let instance = {};
     instance.joints = [];
+    let chassisDensity = calculateChassisDensityWithDrivetrainCost(car_def);
     instance.chassis = createChassis(
-      world, car_def.vertex_list, car_def.chassis_density
+      world, car_def.vertex_list, chassisDensity
     );
     let i;
 
@@ -526,29 +584,96 @@
     }
 
     for (i = 0; i < wheelCount; i++) {
-      let torque = carmass * -constants.gravity.y / car_def.wheel_radius[i];
-
       let randvertex = instance.chassis.vertex_list[car_def.wheel_vertex[i]];
+      let travel = car_def.suspension_travel[i];
+      let lowerTranslation = -travel * 0.65;
+      let upperTranslation = travel * 0.35;
+      let localAxis = vec2(0, 1);
+      let anchorWorld = getWorldPoint(instance.chassis, randvertex);
+      let motor = calculateWheelMotor(car_def, carmass, car_def.wheel_radius[i], constants);
       b2.setBodyTransform(instance.wheels[i].body, {
-        position: getWorldPoint(instance.chassis, randvertex),
+        position: vec2(anchorWorld.x, anchorWorld.y + lowerTranslation * 0.7),
         angle: 0,
       });
-      instance.joints.push(b2.createRevoluteJoint(
+      instance.wheels[i].suspension = {
+        localAnchorA: cloneVec2(randvertex),
+        localAxis: cloneVec2(localAxis),
+        travel: travel,
+        lowerTranslation: lowerTranslation,
+        upperTranslation: upperTranslation,
+        hertz: car_def.suspension_stiffness[i],
+        dampingRatio: car_def.suspension_damping[i],
+      };
+      instance.wheels[i].motor = motor;
+      instance.joints.push(b2.createWheelJoint(
         world,
         instance.chassis.body,
         instance.wheels[i].body,
         {
           localAnchorA: randvertex,
           localAnchorB: vec2(0, 0),
-          maxMotorTorque: torque,
-          motorSpeed: -constants.motorSpeed,
+          localAxis: localAxis,
+          enableSpring: true,
+          hertz: car_def.suspension_stiffness[i],
+          dampingRatio: car_def.suspension_damping[i],
+          enableLimit: true,
+          lowerTranslation: lowerTranslation,
+          upperTranslation: upperTranslation,
           enableMotor: true,
+          motorSpeed: motor.motorSpeed,
+          maxMotorTorque: motor.maxMotorTorque,
           collideConnected: false,
         }
       ));
     }
 
     return instance;
+  }
+
+  function calculateChassisDensityWithDrivetrainCost(car_def) {
+    let baseDensity = car_def.chassis_density[0];
+    let powerNormal = normalizeRange(
+      car_def.motor_power[0],
+      carConstantsData.motorMinPower,
+      carConstantsData.motorPowerRange
+    );
+    let gearingNormal = normalizeRange(
+      car_def.motor_gearing[0],
+      carConstantsData.motorMinGearing,
+      carConstantsData.motorGearingRange
+    );
+    let torqueBias = 1 - gearingNormal;
+    return baseDensity + carConstantsData.motorDensityCost * (
+      powerNormal * powerNormal + 0.25 * torqueBias * powerNormal
+    );
+  }
+
+  function calculateWheelMotor(car_def, carmass, wheelRadius, constants) {
+    let gravityY = constants.gravity && Number.isFinite(constants.gravity.y)
+      ? constants.gravity.y
+      : -9.81;
+    let gravityMagnitude = Math.max(Math.abs(gravityY), 0.1);
+    let referenceRadius = carConstantsData.drivetrainReferenceWheelRadius;
+    let motorPower = car_def.motor_power[0];
+    let gearing = Math.max(car_def.motor_gearing[0], 0.1);
+    let massPenalty = Math.max(
+      0.65,
+      Math.sqrt(Math.max(carmass, 1) / carConstantsData.drivetrainNominalMass)
+    );
+    let radiusRatio = clamp(wheelRadius / referenceRadius, 0.45, 2.2);
+    let baseMotorSpeed = Number.isFinite(constants.motorSpeed) ? constants.motorSpeed : 20;
+
+    return {
+      maxMotorTorque: (carmass * gravityMagnitude / referenceRadius) * motorPower / gearing / massPenalty,
+      motorSpeed: -baseMotorSpeed * gearing / radiusRatio,
+    };
+  }
+
+  function normalizeRange(value, min, range) {
+    if (!Number.isFinite(range) || range <= 0) {
+      return 0;
+    }
+    return clamp((value - min) / range, 0, 1);
   }
 
   function createChassis(world, vertexGenes, density) {
@@ -1462,10 +1587,42 @@
       return;
     }
 
+    let wheels = myCar.car.car.wheels;
+    let chassis = myCar.car.car.chassis;
+    let chassisTransform = getBodyTransform(chassis);
+    let chassisAngle = chassisTransform.angle || 0;
+    let chassisCos = Math.cos(chassisAngle);
+    let chassisSin = Math.sin(chassisAngle);
+
+    ctx.strokeStyle = "#475569";
+    ctx.lineWidth = 1.5 / zoom;
+    ctx.beginPath();
+    let drewSuspension = false;
+    for (let i = 0; i < wheels.length; i++) {
+      let wheel = wheels[i];
+      if (!wheel.suspension) {
+        continue;
+      }
+      let wheelTransform = getBodyTransform(wheel);
+      let wheelCenter = wheel.center.x === 0 && wheel.center.y === 0
+        ? wheelTransform.position
+        : transformPoint(wheelTransform, wheel.center);
+      let chassisAnchor = transformPointWithTrig(
+        chassisTransform,
+        wheel.suspension.localAnchorA,
+        chassisCos,
+        chassisSin
+      );
+      ctx.moveTo(chassisAnchor.x, chassisAnchor.y);
+      ctx.lineTo(wheelCenter.x, wheelCenter.y);
+      drewSuspension = true;
+    }
+    if (drewSuspension) {
+      ctx.stroke();
+    }
+
     ctx.strokeStyle = "#24313a";
     ctx.lineWidth = 1 / zoom;
-
-    let wheels = myCar.car.car.wheels;
 
     for (let i = 0; i < wheels.length; i++) {
       let wheel = wheels[i];
@@ -1483,12 +1640,6 @@
       ctx.fillStyle = "#f7e2a8";
     }
     ctx.beginPath();
-
-    let chassis = myCar.car.car.chassis;
-    let chassisTransform = getBodyTransform(chassis);
-    let chassisAngle = chassisTransform.angle || 0;
-    let chassisCos = Math.cos(chassisAngle);
-    let chassisSin = Math.sin(chassisAngle);
 
     for (let t = 0; t < chassis.triangles.length; t++) {
       let triangle = chassis.triangles[t];
@@ -1603,7 +1754,7 @@
       world_def.floorseed,
       world_def.tileDimensions,
       world_def.maxFloorTiles,
-      world_def.mutable_floor
+      world_def.terrain
     );
 
     let last_tile = floorTiles[
@@ -1618,15 +1769,12 @@
     };
   }
 
-  const TERRAIN_START_FLAT_TILES = 4;
-  const TERRAIN_MAX_HEIGHT = 7;
-
-  function cw_createFloor(world, floorseed, dimensions, maxFloorTiles, mutable_floor) {
+  function cw_createFloor(world, floorseed, dimensions, maxFloorTiles, terrainParameters) {
     let last_tile = null;
     let tile_position = vec2(-5, 0);
     let cw_floorTiles = [];
     Math.seedrandom(floorseed);
-    let terrain = cw_createTerrainState(mutable_floor);
+    let terrain = cw_createTerrainState(terrainParameters);
     for (let k = 0; k < maxFloorTiles; k++) {
       last_tile = cw_createFloorTile(
         world, dimensions, tile_position, cw_nextFloorAngle(terrain, k, maxFloorTiles, tile_position.y)
@@ -1637,21 +1785,18 @@
     return cw_floorTiles;
   }
 
-  function cw_createTerrainState(mutable_floor) {
-    return {
+  function cw_createTerrainState(terrainParameters) {
+    let parameters = normalizeTerrainParameters(terrainParameters);
+    return Object.assign({
       angle: 0,
       targetAngle: 0,
       targetTilesLeft: 0,
       lastTargetSign: 1,
-      maxAngle: mutable_floor ? 0.5 : 0.72,
-      maxAngleStep: mutable_floor ? 0.06 : 0.1,
-      noise: mutable_floor ? 0.018 : 0.032,
-      heightBias: mutable_floor ? 0.055 : 0.045,
-    };
+    }, parameters);
   }
 
   function cw_nextFloorAngle(terrain, tileIndex, maxFloorTiles, currentHeight) {
-    if (tileIndex < TERRAIN_START_FLAT_TILES) {
+    if (tileIndex < terrain.startFlatTiles) {
       terrain.angle = 0;
       terrain.targetAngle = 0;
       terrain.targetTilesLeft = 0;
@@ -1659,19 +1804,22 @@
     }
 
     let progress = maxFloorTiles > 1 ? tileIndex / (maxFloorTiles - 1) : 1;
-    let difficulty = cw_smoothStep(progress * 1.35);
-    let allowedAngle = terrain.maxAngle * (0.48 + difficulty * 0.52);
+    let difficulty = cw_smoothStep(progress * terrain.difficultyRamp);
+    let allowedAngle = terrain.maxAngle * (terrain.difficultyFloor + difficulty * (1 - terrain.difficultyFloor));
     if (terrain.targetTilesLeft <= 0) {
-      terrain.targetTilesLeft = Math.floor(4 + Math.random() * (11 - difficulty * 4));
-      terrain.lastTargetSign = Math.random() < 0.72 ? -terrain.lastTargetSign : terrain.lastTargetSign;
-      let minimumAngle = allowedAngle * (0.28 + difficulty * 0.22);
+      let maxTargetTiles = Math.max(terrain.targetMinTiles, terrain.targetMaxTiles - difficulty * terrain.targetShortening);
+      terrain.targetTilesLeft = Math.floor(
+        terrain.targetMinTiles + Math.random() * (maxTargetTiles - terrain.targetMinTiles + 1)
+      );
+      terrain.lastTargetSign = Math.random() < terrain.flipChance ? -terrain.lastTargetSign : terrain.lastTargetSign;
+      let minimumAngle = allowedAngle * clamp(terrain.minAngleBase + difficulty * terrain.minAngleDifficulty, 0, 0.95);
       terrain.targetAngle = terrain.lastTargetSign * (
         minimumAngle + Math.random() * (allowedAngle - minimumAngle)
       );
     }
 
     terrain.targetTilesLeft--;
-    let heightCorrection = clamp(-currentHeight / TERRAIN_MAX_HEIGHT, -1, 1) * terrain.heightBias;
+    let heightCorrection = clamp(-currentHeight / terrain.maxHeight, -1, 1) * terrain.heightBias;
     let desiredAngle = terrain.targetAngle + heightCorrection + (Math.random() * 2 - 1) * terrain.noise;
     desiredAngle = clamp(desiredAngle, -allowedAngle, allowedAngle);
 
@@ -1900,7 +2048,7 @@
   const minimapctx = get2dContext(minimapcanvas, "minimap");
   const minimapscale = 3;
   let minimapfogdistance = 0;
-  let lastFloorSeed = null;
+  let lastFloorSignature = null;
   const fogdistance = requireElementById("minimapfog").style;
 
 
@@ -1916,6 +2064,7 @@
     ghost: "cw_ghost",
     topScores: "cw_topScores",
     floorSeed: "cw_floorSeed",
+    terrainSettings: "cw_terrainSettings",
   };
 
   const distanceMeter = requireElementById("distancemeter");
@@ -1942,13 +2091,80 @@
     doSleep: true,
     floorseed: btoa(Math.seedrandom()),
     tileDimensions: vec2(1.5, 0.15),
-    maxFloorTiles: 200,
+    maxFloorTiles: 220,
     mutable_floor: false,
+    terrain: normalizeTerrainParameters(),
     box2dfps: box2dfps,
     motorSpeed: 20,
     max_idle_timer: max_idle_timer,
     schema: generationConfig.constants.schema
   }
+
+  const terrainControls = [
+    {
+      inputId: "terrain-length",
+      outputId: "terrain-length-value",
+      getValue() { return world_def.maxFloorTiles; },
+      setValue(value) {
+        world_def.maxFloorTiles = clamp(parseFiniteInteger(value, world_def.maxFloorTiles), 120, 320);
+      },
+      format(value) { return Math.round(value) + " tiles"; },
+    },
+    {
+      inputId: "terrain-start-flat",
+      outputId: "terrain-start-flat-value",
+      getValue() { return world_def.terrain.startFlatTiles; },
+      setValue(value) {
+        world_def.terrain.startFlatTiles = clamp(parseFiniteInteger(value, world_def.terrain.startFlatTiles), 0, 10);
+      },
+      format(value) { return Math.round(value) + " tiles"; },
+    },
+    {
+      inputId: "terrain-max-slope",
+      outputId: "terrain-max-slope-value",
+      getValue() { return Math.round(world_def.terrain.maxAngle * RAD_TO_DEG); },
+      setValue(value) {
+        world_def.terrain.maxAngle = clamp(parseFiniteFloat(value, world_def.terrain.maxAngle * RAD_TO_DEG), 20, 60) * DEG_TO_RAD;
+      },
+      format(value) { return Math.round(value) + " deg"; },
+    },
+    {
+      inputId: "terrain-slope-change",
+      outputId: "terrain-slope-change-value",
+      getValue() { return roundToTenth(world_def.terrain.maxAngleStep * RAD_TO_DEG); },
+      setValue(value) {
+        world_def.terrain.maxAngleStep = clamp(parseFiniteFloat(value, world_def.terrain.maxAngleStep * RAD_TO_DEG), 2, 14) * DEG_TO_RAD;
+      },
+      format(value) { return formatTenth(value) + " deg"; },
+    },
+    {
+      inputId: "terrain-roughness",
+      outputId: "terrain-roughness-value",
+      getValue() { return roundToTenth(world_def.terrain.noise * 100); },
+      setValue(value) {
+        world_def.terrain.noise = clamp(parseFiniteFloat(value, world_def.terrain.noise * 100), 0, 10) / 100;
+      },
+      format(value) { return formatTenth(value); },
+    },
+    {
+      inputId: "terrain-hill-length",
+      outputId: "terrain-hill-length-value",
+      getValue() { return world_def.terrain.targetMaxTiles; },
+      setValue(value) {
+        world_def.terrain.targetMaxTiles = clamp(parseFiniteInteger(value, world_def.terrain.targetMaxTiles), 3, 14);
+      },
+      format(value) { return Math.round(value) + " tiles"; },
+    },
+    {
+      inputId: "terrain-recovery",
+      outputId: "terrain-recovery-value",
+      getValue() { return roundToTenth(world_def.terrain.heightBias * 100); },
+      setValue(value) {
+        world_def.terrain.heightBias = clamp(parseFiniteFloat(value, world_def.terrain.heightBias * 100), 0, 10) / 100;
+      },
+      format(value) { return formatTenth(value); },
+    },
+  ];
 
   let cw_deadCars;
   let graphState = {
@@ -1965,6 +2181,81 @@
       cw_graphElite: [],
       cw_graphTop: [],
     };
+  }
+
+  function roundToTenth(value) {
+    return Math.round(value * 10) / 10;
+  }
+
+  function formatTenth(value) {
+    let rounded = roundToTenth(value);
+    return Number.isInteger(rounded) ? rounded.toString() : rounded.toFixed(1);
+  }
+
+  function getTerrainSettingsSnapshot() {
+    return {
+      maxFloorTiles: world_def.maxFloorTiles,
+      terrain: normalizeTerrainParameters(world_def.terrain),
+    };
+  }
+
+  function applyTerrainSettingsSnapshot(settings) {
+    if (!settings || typeof settings !== "object") {
+      return;
+    }
+    world_def.maxFloorTiles = clamp(
+      parseFiniteInteger(settings.maxFloorTiles, world_def.maxFloorTiles),
+      120,
+      320
+    );
+    world_def.terrain = normalizeTerrainParameters(settings.terrain);
+    syncTerrainControlsFromWorld();
+  }
+
+  function getFloorSignature() {
+    return JSON.stringify({
+      seed: world_def.floorseed,
+      maxFloorTiles: world_def.maxFloorTiles,
+      tileWidth: world_def.tileDimensions.x,
+      tileHeight: world_def.tileDimensions.y,
+      terrain: normalizeTerrainParameters(world_def.terrain),
+    });
+  }
+
+  function renderTerrainControl(control) {
+    let input = requireElementById(control.inputId);
+    let output = requireElementById(control.outputId);
+    let value = control.getValue();
+    input.value = value;
+    output.textContent = control.format(value);
+  }
+
+  function syncTerrainControlsFromWorld() {
+    world_def.terrain = normalizeTerrainParameters(world_def.terrain);
+    for (let i = 0; i < terrainControls.length; i++) {
+      renderTerrainControl(terrainControls[i]);
+    }
+  }
+
+  function applyTerrainControlsToWorld() {
+    for (let i = 0; i < terrainControls.length; i++) {
+      let control = terrainControls[i];
+      control.setValue(requireElementById(control.inputId).value);
+    }
+    world_def.terrain = normalizeTerrainParameters(world_def.terrain);
+    syncTerrainControlsFromWorld();
+  }
+
+  function bindTerrainControls() {
+    for (let i = 0; i < terrainControls.length; i++) {
+      let control = terrainControls[i];
+      requireElementById(control.inputId).addEventListener("input", function () {
+        control.setValue(this.value);
+        world_def.terrain = normalizeTerrainParameters(world_def.terrain);
+        renderTerrainControl(control);
+      });
+    }
+    syncTerrainControlsFromWorld();
   }
 
 
@@ -2334,8 +2625,9 @@
     let floorTiles = currentRunner.scene.floorTiles;
     let last_tile = null;
     let tile_position = vec2(-5, 0);
-    let floorChanged = (lastFloorSeed !== world_def.floorseed);
-    lastFloorSeed = world_def.floorseed;
+    let floorSignature = getFloorSignature();
+    let floorChanged = (lastFloorSignature !== floorSignature);
+    lastFloorSignature = floorSignature;
     if (floorChanged) {
       minimapfogdistance = 0;
       fogdistance.width = "800px";
@@ -2548,6 +2840,7 @@
 
   function cw_resetWorld() {
     doDraw = true;
+    applyTerrainControlsToWorld();
     cw_stopSimulation();
     world_def.floorseed = seedInput.value;
     cw_clearPopulationWorld();
@@ -2587,6 +2880,7 @@
 
   requireElementById("new-population").addEventListener("click", function () {
     doDraw = true;
+    applyTerrainControlsToWorld();
     cw_stopSimulation();
     cw_clearPopulationWorld();
     destroyCurrentRunner();
@@ -2608,6 +2902,7 @@
       localStorage.setItem(STORAGE_KEYS.ghost, JSON.stringify(ghost));
       localStorage.setItem(STORAGE_KEYS.topScores, JSON.stringify(graphState.cw_topScores));
       localStorage.setItem(STORAGE_KEYS.floorSeed, world_def.floorseed);
+      localStorage.setItem(STORAGE_KEYS.terrainSettings, JSON.stringify(getTerrainSettingsSnapshot()));
     } catch (error) {
       alert("Progress could not be saved. Browser storage may be full or unavailable.");
     }
@@ -2625,6 +2920,7 @@
     let restoredGhost;
     let restoredTopScores;
     let restoredFloorSeed;
+    let restoredTerrainSettings;
     try {
       restoredGeneration = normalizeGeneration(
         generationConfig.constants.schema,
@@ -2640,6 +2936,7 @@
         restoredTopScores = [];
       }
       restoredFloorSeed = localStorage.getItem(STORAGE_KEYS.floorSeed) || world_def.floorseed;
+      restoredTerrainSettings = JSON.parse(localStorage.getItem(STORAGE_KEYS.terrainSettings) || "null");
     } catch (error) {
       alert("Saved progress could not be restored");
       return;
@@ -2655,6 +2952,7 @@
     graphState.cw_topScores = restoredTopScores;
     world_def.floorseed = restoredFloorSeed;
     seedInput.value = world_def.floorseed;
+    applyTerrainSettingsSnapshot(restoredTerrainSettings);
 
     currentRunner = worldRun(world_def, generationState.generation, uiListeners);
     setupCarUI();
@@ -2858,6 +3156,7 @@
 // Expose to global scope for inline onclick handlers in index.html
   window.cw_setCameraTarget = cw_setCameraTarget;
 
+  bindTerrainControls();
   cw_init();
 
 
