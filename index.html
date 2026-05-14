@@ -70,10 +70,12 @@
             </div>
           </div>
 
-          <div id="minimapholder">
-            <div id="minimapfog"></div>
-            <canvas id="minimap" width="800" height="200"></canvas>
-            <div id="minimapcamera"></div>
+          <div class="range-map-scroll">
+            <div id="minimapholder">
+              <div id="minimapfog"></div>
+              <canvas id="minimap" width="800" height="200"></canvas>
+              <div id="minimapcamera"></div>
+            </div>
           </div>
         </section>
 
@@ -110,6 +112,20 @@
               </div>
             </div>
             <div id="topscores"></div>
+          </div>
+
+          <div class="surface selected-car-surface" id="selectedcarholder">
+            <div class="panel-heading compact">
+              <div>
+                <p class="section-kicker">Inspection</p>
+                <h2>Selected Car</h2>
+              </div>
+            </div>
+
+            <div class="selected-car-panel" aria-live="polite">
+              <div id="selected-car-summary" class="selected-car-summary"></div>
+              <div id="selected-car-components" class="selected-car-components"></div>
+            </div>
           </div>
         </section>
       </section>
@@ -194,6 +210,8 @@
               <td><label for="gravity">Gravity</label></td>
               <td>
                 <select id="gravity">
+                  <option value="100">Extreme (100)</option>
+                  <option value="50">Heavy (50)</option>
                   <option value="24.8">Jupiter (24.8)</option>
                   <option value="11.2">Neptune (11.2)</option>
                   <option value="10.4">Saturn (10.4)</option>
@@ -220,6 +238,16 @@
                   <option value="8">8</option>
                   <option value="9">9</option>
                   <option value="10">10</option>
+                  <option value="11">11</option>
+                  <option value="12">12</option>
+                  <option value="13">13</option>
+                  <option value="14">14</option>
+                  <option value="15">15</option>
+                  <option value="16">16</option>
+                  <option value="17">17</option>
+                  <option value="18">18</option>
+                  <option value="19">19</option>
+                  <option value="20">20</option>
                 </select>
               </td>
             </tr>
@@ -239,17 +267,8 @@
               <td><label for="terrain-length">Course length</label></td>
               <td>
                 <div class="terrain-control">
-                  <input id="terrain-length" type="range" min="120" max="320" step="10" value="220" />
+                  <input id="terrain-length" type="range" min="120" max="1024" step="8" value="220" />
                   <output id="terrain-length-value" for="terrain-length">220 tiles</output>
-                </div>
-              </td>
-            </tr>
-            <tr>
-              <td><label for="terrain-start-flat">Start flat</label></td>
-              <td>
-                <div class="terrain-control">
-                  <input id="terrain-start-flat" type="range" min="0" max="10" step="1" value="3" />
-                  <output id="terrain-start-flat-value" for="terrain-start-flat">3 tiles</output>
                 </div>
               </td>
             </tr>
@@ -257,7 +276,7 @@
               <td><label for="terrain-max-slope">Max slope</label></td>
               <td>
                 <div class="terrain-control">
-                  <input id="terrain-max-slope" type="range" min="20" max="60" step="1" value="50" />
+                  <input id="terrain-max-slope" type="range" min="20" max="80" step="1" value="50" />
                   <output id="terrain-max-slope-value" for="terrain-max-slope">50 deg</output>
                 </div>
               </td>
@@ -266,7 +285,7 @@
               <td><label for="terrain-slope-change">Slope change</label></td>
               <td>
                 <div class="terrain-control">
-                  <input id="terrain-slope-change" type="range" min="2" max="14" step="0.5" value="7.5" />
+                  <input id="terrain-slope-change" type="range" min="2" max="30" step="0.5" value="7.5" />
                   <output id="terrain-slope-change-value" for="terrain-slope-change">7.5 deg</output>
                 </div>
               </td>
@@ -275,7 +294,7 @@
               <td><label for="terrain-roughness">Roughness</label></td>
               <td>
                 <div class="terrain-control">
-                  <input id="terrain-roughness" type="range" min="0" max="10" step="0.5" value="4.5" />
+                  <input id="terrain-roughness" type="range" min="0" max="25" step="0.5" value="4.5" />
                   <output id="terrain-roughness-value" for="terrain-roughness">4.5</output>
                 </div>
               </td>
@@ -284,7 +303,7 @@
               <td><label for="terrain-hill-length">Hill length</label></td>
               <td>
                 <div class="terrain-control">
-                  <input id="terrain-hill-length" type="range" min="3" max="14" step="1" value="7" />
+                  <input id="terrain-hill-length" type="range" min="3" max="64" step="1" value="7" />
                   <output id="terrain-hill-length-value" for="terrain-hill-length">7 tiles</output>
                 </div>
               </td>
@@ -293,7 +312,7 @@
               <td><label for="terrain-recovery">Height recovery</label></td>
               <td>
                 <div class="terrain-control">
-                  <input id="terrain-recovery" type="range" min="0" max="10" step="0.2" value="3.2" />
+                  <input id="terrain-recovery" type="range" min="0" max="25" step="0.2" value="3.2" />
                   <output id="terrain-recovery-value" for="terrain-recovery">3.2</output>
                 </div>
               </td>
@@ -335,7 +354,7 @@
         <p class="section-kicker">Genome</p>
         <h2>Vehicle DNA</h2>
       </div>
-      <p>Shape vertices, wheel size and density, suspension travel and tuning, chassis density, drivetrain power, and gearing drive every new generation.</p>
+      <p>Shape vertices, wheel size, density, friction, suspension travel and tuning, chassis density, drivetrain power, gearing, and terrain friction drive every new generation.</p>
     </section>
   </main>
 

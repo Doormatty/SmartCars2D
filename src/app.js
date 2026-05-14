@@ -74,6 +74,10 @@
     maxAngleStep: 7.5 * DEG_TO_RAD,
     noise: 0.045,
     heightBias: 0.032,
+    frictionMin: 0.35,
+    frictionMax: 1.65,
+    frictionNoise: 0.18,
+    frictionWaves: 4,
     difficultyRamp: 1.55,
     difficultyFloor: 0.58,
     targetMinTiles: 3,
@@ -86,17 +90,21 @@
 
   function normalizeTerrainParameters(source) {
     let terrain = Object.assign({}, TERRAIN_DEFAULTS, source || {});
-    terrain.startFlatTiles = clamp(parseFiniteInteger(terrain.startFlatTiles, TERRAIN_DEFAULTS.startFlatTiles), 0, 20);
-    terrain.maxHeight = clamp(parseFiniteFloat(terrain.maxHeight, TERRAIN_DEFAULTS.maxHeight), 2, 20);
-    terrain.maxAngle = clamp(parseFiniteFloat(terrain.maxAngle, TERRAIN_DEFAULTS.maxAngle), 20 * DEG_TO_RAD, 65 * DEG_TO_RAD);
-    terrain.maxAngleStep = clamp(parseFiniteFloat(terrain.maxAngleStep, TERRAIN_DEFAULTS.maxAngleStep), 1 * DEG_TO_RAD, 18 * DEG_TO_RAD);
-    terrain.noise = clamp(parseFiniteFloat(terrain.noise, TERRAIN_DEFAULTS.noise), 0, 0.12);
-    terrain.heightBias = clamp(parseFiniteFloat(terrain.heightBias, TERRAIN_DEFAULTS.heightBias), 0, 0.12);
-    terrain.difficultyRamp = clamp(parseFiniteFloat(terrain.difficultyRamp, TERRAIN_DEFAULTS.difficultyRamp), 0.2, 3);
-    terrain.difficultyFloor = clamp(parseFiniteFloat(terrain.difficultyFloor, TERRAIN_DEFAULTS.difficultyFloor), 0.2, 0.9);
-    terrain.targetMinTiles = clamp(parseFiniteInteger(terrain.targetMinTiles, TERRAIN_DEFAULTS.targetMinTiles), 1, 20);
-    terrain.targetMaxTiles = clamp(parseFiniteInteger(terrain.targetMaxTiles, TERRAIN_DEFAULTS.targetMaxTiles), terrain.targetMinTiles, 24);
-    terrain.targetShortening = clamp(parseFiniteFloat(terrain.targetShortening, TERRAIN_DEFAULTS.targetShortening), 0, 12);
+    terrain.startFlatTiles = TERRAIN_DEFAULTS.startFlatTiles;
+    terrain.maxHeight = clamp(parseFiniteFloat(terrain.maxHeight, TERRAIN_DEFAULTS.maxHeight), 2, 60);
+    terrain.maxAngle = clamp(parseFiniteFloat(terrain.maxAngle, TERRAIN_DEFAULTS.maxAngle), 20 * DEG_TO_RAD, 80 * DEG_TO_RAD);
+    terrain.maxAngleStep = clamp(parseFiniteFloat(terrain.maxAngleStep, TERRAIN_DEFAULTS.maxAngleStep), 1 * DEG_TO_RAD, 30 * DEG_TO_RAD);
+    terrain.noise = clamp(parseFiniteFloat(terrain.noise, TERRAIN_DEFAULTS.noise), 0, 0.25);
+    terrain.heightBias = clamp(parseFiniteFloat(terrain.heightBias, TERRAIN_DEFAULTS.heightBias), 0, 0.25);
+    terrain.frictionMin = clamp(parseFiniteFloat(terrain.frictionMin, TERRAIN_DEFAULTS.frictionMin), 0.05, 4);
+    terrain.frictionMax = clamp(parseFiniteFloat(terrain.frictionMax, TERRAIN_DEFAULTS.frictionMax), terrain.frictionMin, 5);
+    terrain.frictionNoise = clamp(parseFiniteFloat(terrain.frictionNoise, TERRAIN_DEFAULTS.frictionNoise), 0, 1);
+    terrain.frictionWaves = clamp(parseFiniteFloat(terrain.frictionWaves, TERRAIN_DEFAULTS.frictionWaves), 0, 12);
+    terrain.difficultyRamp = clamp(parseFiniteFloat(terrain.difficultyRamp, TERRAIN_DEFAULTS.difficultyRamp), 0.2, 5);
+    terrain.difficultyFloor = clamp(parseFiniteFloat(terrain.difficultyFloor, TERRAIN_DEFAULTS.difficultyFloor), 0.2, 0.98);
+    terrain.targetMinTiles = clamp(parseFiniteInteger(terrain.targetMinTiles, TERRAIN_DEFAULTS.targetMinTiles), 1, 64);
+    terrain.targetMaxTiles = clamp(parseFiniteInteger(terrain.targetMaxTiles, TERRAIN_DEFAULTS.targetMaxTiles), terrain.targetMinTiles, 96);
+    terrain.targetShortening = clamp(parseFiniteFloat(terrain.targetShortening, TERRAIN_DEFAULTS.targetShortening), 0, 32);
     terrain.flipChance = clamp(parseFiniteFloat(terrain.flipChance, TERRAIN_DEFAULTS.flipChance), 0, 1);
     terrain.minAngleBase = clamp(parseFiniteFloat(terrain.minAngleBase, TERRAIN_DEFAULTS.minAngleBase), 0, 1);
     terrain.minAngleDifficulty = clamp(parseFiniteFloat(terrain.minAngleDifficulty, TERRAIN_DEFAULTS.minAngleDifficulty), 0, 1);
@@ -440,23 +448,25 @@
   const carConstantsData = {
     "wheelCount": 2,
     "wheelMinRadius": 0.2,
-    "wheelRadiusRange": 0.5,
+    "wheelRadiusRange": 0.8,
     "wheelMinDensity": 40,
-    "wheelDensityRange": 100,
-    "chassisDensityRange": 300,
+    "wheelDensityRange": 160,
+    "wheelMinFriction": 0.2,
+    "wheelFrictionRange": 1.8,
+    "chassisDensityRange": 500,
     "chassisMinDensity": 30,
     "chassisMinAxis": 0.1,
-    "chassisAxisRange": 1.1,
+    "chassisAxisRange": 1.7,
     "suspensionMinTravel": 0.1,
-    "suspensionTravelRange": 0.5,
+    "suspensionTravelRange": 0.9,
     "suspensionMinStiffness": 1.25,
-    "suspensionStiffnessRange": 10.75,
+    "suspensionStiffnessRange": 18.75,
     "suspensionMinDamping": 0.18,
-    "suspensionDampingRange": 1.32,
+    "suspensionDampingRange": 2.32,
     "motorMinPower": 0.45,
-    "motorPowerRange": 1.95,
+    "motorPowerRange": 3.55,
     "motorMinGearing": 0.55,
-    "motorGearingRange": 1.35,
+    "motorGearingRange": 2.45,
     "motorDensityCost": 95,
     "drivetrainNominalMass": 260,
     "drivetrainReferenceWheelRadius": 0.45
@@ -540,6 +550,7 @@
       return {
         wheel_radius: { type: "float", length: values.wheelCount, min: values.wheelMinRadius, range: values.wheelRadiusRange, factor: 1 },
         wheel_density: { type: "float", length: values.wheelCount, min: values.wheelMinDensity, range: values.wheelDensityRange, factor: 1 },
+        wheel_friction: { type: "float", length: values.wheelCount, min: values.wheelMinFriction, range: values.wheelFrictionRange, factor: 1 },
         chassis_density: { type: "float", length: 1, min: values.chassisMinDensity, range: values.chassisDensityRange, factor: 1 },
         suspension_travel: { type: "float", length: values.wheelCount, min: values.suspensionMinTravel, range: values.suspensionTravelRange, factor: 1 },
         suspension_stiffness: { type: "float", length: values.wheelCount, min: values.suspensionMinStiffness, range: values.suspensionStiffnessRange, factor: 1 },
@@ -574,7 +585,8 @@
       instance.wheels[i] = createWheel(
         world,
         car_def.wheel_radius[i],
-        car_def.wheel_density[i]
+        car_def.wheel_density[i],
+        car_def.wheel_friction[i]
       );
     }
 
@@ -717,7 +729,7 @@
     });
   }
 
-  function createWheel(world, radius, density) {
+  function createWheel(world, radius, density, friction) {
     let body = b2.createBody(world, {
       type: b2.dynamicBody,
       position: vec2(0, 0),
@@ -727,7 +739,7 @@
       center: center,
       radius: radius,
       density: density,
-      friction: 1,
+      friction: friction,
       restitution: 0.2,
       groupIndex: -1,
     });
@@ -738,6 +750,7 @@
       center: center,
       radius: radius,
       density: density,
+      friction: friction,
     };
   }
 
@@ -1390,9 +1403,7 @@
     let camera_x = camera.pos.x;
     let zoom = camera.zoom;
     ctx.strokeStyle = "#17212b";
-    ctx.fillStyle = "#8d9a96";
     ctx.lineWidth = 1 / zoom;
-    ctx.beginPath();
 
     let k;
     if (camera.pos.x - 10 > 0) {
@@ -1405,14 +1416,25 @@
       let b = cw_floorTiles[k];
       let shapePosition = b.worldVertices[0].x;
       if ((shapePosition > (camera_x - 5)) && (shapePosition < (camera_x + 10))) {
+        ctx.fillStyle = getFloorFrictionColor(b.friction);
+        ctx.beginPath();
         cw_drawWorldPoly(ctx, b.worldVertices, b.worldVertices.length);
+        ctx.fill();
+        ctx.stroke();
       }
       if (shapePosition > camera_x + 10) {
         break;
       }
     }
-    ctx.fill();
-    ctx.stroke();
+  }
+
+  function getFloorFrictionColor(friction) {
+    let terrain = world_def && world_def.terrain ? world_def.terrain : TERRAIN_DEFAULTS;
+    let range = Math.max(terrain.frictionMax - terrain.frictionMin, 0.01);
+    let t = clamp((friction - terrain.frictionMin) / range, 0, 1);
+    let shade = Math.round(150 - (t * 48));
+    let green = Math.round(164 - (t * 24));
+    return "rgb(" + shade + "," + green + ",150)";
   }
 
 
@@ -1440,10 +1462,12 @@
       let nextState = cw_storeGraphScores(
         lastState, scores, generationSize
       );
+      let graphScale = cw_getGraphScale(nextState, graphwidth, graphheight);
       cw_clearGraphics(graphcanvas, graphctx, graphwidth, graphheight);
-      cw_plotAverage(nextState, graphctx);
-      cw_plotElite(nextState, graphctx);
-      cw_plotTop(nextState, graphctx);
+      cw_updateGraphScaleLabels(graphScale.yMax);
+      cw_plotAverage(nextState, graphctx, graphScale);
+      cw_plotElite(nextState, graphctx, graphScale);
+      cw_plotTop(nextState, graphctx, graphScale);
       cw_listTopScores(topScoresElem, nextState);
       return nextState;
     },
@@ -1466,40 +1490,108 @@
     }
   }
 
-  function cw_plotTop(state, graphctx) {
-    let cw_graphTop = state.cw_graphTop;
-    let graphsize = cw_graphTop.length;
-    graphctx.strokeStyle = "#d94f45";
+  function cw_getGraphScale(state, graphwidth, graphheight) {
+    return {
+      width: graphwidth,
+      height: graphheight,
+      yMax: cw_niceGraphMax(cw_getMaxGraphValue(state) * 1.08)
+    };
+  }
+
+  function cw_getMaxGraphValue(state) {
+    let maxValue = 0;
+    let series = [
+      state.cw_graphTop || [],
+      state.cw_graphElite || [],
+      state.cw_graphAverage || []
+    ];
+    for (let s = 0; s < series.length; s++) {
+      for (let i = 0; i < series[s].length; i++) {
+        if (Number.isFinite(series[s][i])) {
+          maxValue = Math.max(maxValue, series[s][i]);
+        }
+      }
+    }
+    return maxValue;
+  }
+
+  function cw_niceGraphMax(value) {
+    if (!Number.isFinite(value) || value <= 0) {
+      return 1;
+    }
+    let exponent = Math.floor(Math.log10(value));
+    let magnitude = Math.pow(10, exponent);
+    let fraction = value / magnitude;
+    let niceFraction = fraction <= 1 ? 1 : fraction <= 2 ? 2 : fraction <= 5 ? 5 : 10;
+    return niceFraction * magnitude;
+  }
+
+  function cw_updateGraphScaleLabels(yMax) {
+    let scaleLabels = [
+      ["s100", yMax],
+      ["s75", yMax * 0.75],
+      ["s50", yMax * 0.5],
+      ["s25", yMax * 0.25],
+      ["s0", 0]
+    ];
+    for (let i = 0; i < scaleLabels.length; i++) {
+      let label = document.getElementById(scaleLabels[i][0]);
+      if (label) {
+        label.textContent = cw_formatGraphScaleLabel(scaleLabels[i][1]);
+      }
+    }
+  }
+
+  function cw_formatGraphScaleLabel(value) {
+    if (!Number.isFinite(value)) {
+      return "--";
+    }
+    if (value >= 1000) {
+      return formatDetailNumber(value / 1000, value >= 10000 ? 0 : 1) + "k";
+    }
+    if (value >= 10) {
+      return Math.round(value).toString();
+    }
+    if (value >= 1) {
+      return formatDetailNumber(value, 1);
+    }
+    return formatDetailNumber(value, 2);
+  }
+
+  function cw_scaleGraphY(value, scale) {
+    if (!Number.isFinite(value)) {
+      return 0;
+    }
+    return clamp(value, 0, scale.yMax) / scale.yMax * scale.height;
+  }
+
+  function cw_plotSeries(values, graphctx, scale, color) {
+    let graphsize = values.length;
+    if (graphsize === 0) {
+      return;
+    }
+    graphctx.strokeStyle = color;
     graphctx.beginPath();
     graphctx.moveTo(0, 0);
     for (let k = 0; k < graphsize; k++) {
-      graphctx.lineTo(400 * (k + 1) / graphsize, cw_graphTop[k]);
+      graphctx.lineTo(
+        scale.width * (k + 1) / graphsize,
+        cw_scaleGraphY(values[k], scale)
+      );
     }
     graphctx.stroke();
   }
 
-  function cw_plotElite(state, graphctx) {
-    let cw_graphElite = state.cw_graphElite;
-    let graphsize = cw_graphElite.length;
-    graphctx.strokeStyle = "#2f8a4c";
-    graphctx.beginPath();
-    graphctx.moveTo(0, 0);
-    for (let k = 0; k < graphsize; k++) {
-      graphctx.lineTo(400 * (k + 1) / graphsize, cw_graphElite[k]);
-    }
-    graphctx.stroke();
+  function cw_plotTop(state, graphctx, scale) {
+    cw_plotSeries(state.cw_graphTop, graphctx, scale, "#d94f45");
   }
 
-  function cw_plotAverage(state, graphctx) {
-    let cw_graphAverage = state.cw_graphAverage;
-    let graphsize = cw_graphAverage.length;
-    graphctx.strokeStyle = "#2563eb";
-    graphctx.beginPath();
-    graphctx.moveTo(0, 0);
-    for (let k = 0; k < graphsize; k++) {
-      graphctx.lineTo(400 * (k + 1) / graphsize, cw_graphAverage[k]);
-    }
-    graphctx.stroke();
+  function cw_plotElite(state, graphctx, scale) {
+    cw_plotSeries(state.cw_graphElite, graphctx, scale, "#2f8a4c");
+  }
+
+  function cw_plotAverage(state, graphctx, scale) {
+    cw_plotSeries(state.cw_graphAverage, graphctx, scale, "#2563eb");
   }
 
 
@@ -1678,17 +1770,23 @@
     this.is_elite = car.def.is_elite;
     this.idleTimerBar = idleTimerBarElement.style;
     this.idleTimerText = idleTimerText;
-    this.idleTimerText.textContent = car_def.index.toString();
     this.minimapmarker = requireElementById("bar" + car_def.index);
     this.lastIdleTimerWidth = null;
     this.lastMarkerLeft = null;
+    if (shouldUpdateLivePanels()) {
+      this.idleTimerText.textContent = car_def.index.toString();
+    }
 
     if (this.is_elite) {
-      this.idleTimerBar.backgroundColor = "#2563eb";
+      if (shouldUpdateLivePanels()) {
+        this.idleTimerBar.backgroundColor = "#2563eb";
+      }
       this.minimapmarker.style.borderLeft = "1px solid #2563eb";
       this.minimapmarker.textContent = car_def.index.toString();
     } else {
-      this.idleTimerBar.backgroundColor = "#d49718";
+      if (shouldUpdateLivePanels()) {
+        this.idleTimerBar.backgroundColor = "#d49718";
+      }
       this.minimapmarker.style.borderLeft = "1px solid #d49718";
       this.minimapmarker.textContent = car_def.index.toString();
     }
@@ -1699,23 +1797,25 @@
     return getBodyPosition(this.car.car.chassis);
   }
 
-  cw_Car.prototype.kill = function (currentRunner, constants) {
+  cw_Car.prototype.kill = function (currentRunner, constants, updateLivePanels) {
     this.minimapmarker.style.borderLeft = "1px solid #aeb8bd";
-    let finishLine = currentRunner.scene.finishLine
-    let max_idle_timer = constants.max_idle_timer;
-    let status = run.getStatus(this.car.state, {
-      finishLine: finishLine,
-      max_idle_timer: max_idle_timer,
-    })
-    switch (status) {
-      case 1: {
-        this.idleTimerBar.width = "0";
-        break
-      }
-      case -1: {
-        this.idleTimerText.textContent = "\u2020";
-        this.idleTimerBar.width = "0";
-        break
+    if (updateLivePanels !== false) {
+      let finishLine = currentRunner.scene.finishLine
+      let max_idle_timer = constants.max_idle_timer;
+      let status = run.getStatus(this.car.state, {
+        finishLine: finishLine,
+        max_idle_timer: max_idle_timer,
+      })
+      switch (status) {
+        case 1: {
+          this.idleTimerBar.width = "0";
+          break
+        }
+        case -1: {
+          this.idleTimerText.textContent = "\u2020";
+          this.idleTimerBar.width = "0";
+          break
+        }
       }
     }
     this.alive = false;
@@ -1776,8 +1876,10 @@
     Math.seedrandom(floorseed);
     let terrain = cw_createTerrainState(terrainParameters);
     for (let k = 0; k < maxFloorTiles; k++) {
+      let angle = cw_nextFloorAngle(terrain, k, maxFloorTiles, tile_position.y);
+      let friction = cw_nextFloorFriction(terrain, k, maxFloorTiles);
       last_tile = cw_createFloorTile(
-        world, dimensions, tile_position, cw_nextFloorAngle(terrain, k, maxFloorTiles, tile_position.y)
+        world, dimensions, tile_position, angle, friction
       );
       cw_floorTiles.push(last_tile);
       tile_position = cloneVec2(last_tile.worldVertices[3]);
@@ -1837,8 +1939,21 @@
     return t * t * (3 - 2 * t);
   }
 
+  function cw_nextFloorFriction(terrain, tileIndex, maxFloorTiles) {
+    if (maxFloorTiles <= 1) {
+      return terrain.frictionMax;
+    }
+    let progress = tileIndex / (maxFloorTiles - 1);
+    let wave = terrain.frictionWaves === 0
+      ? 0.5
+      : (Math.sin(progress * TWO_PI * terrain.frictionWaves) + 1) / 2;
+    let drift = cw_smoothStep(progress);
+    let jitter = (Math.random() * 2 - 1) * terrain.frictionNoise;
+    let blend = clamp((drift * 0.55) + (wave * 0.35) + 0.1 + jitter, 0, 1);
+    return terrain.frictionMin + (terrain.frictionMax - terrain.frictionMin) * blend;
+  }
 
-  function cw_createFloorTile(world, dim, position, angle) {
+  function cw_createFloorTile(world, dim, position, angle, friction) {
     let body = b2.createBody(world, {
       position: position,
     });
@@ -1857,7 +1972,7 @@
     let shape = b2.createPolygonShape(body, {
       vertices: newcoords,
       density: 0,
-      friction: 0.5,
+      friction: friction,
     });
     let transform = {
       position: cloneVec2(position),
@@ -1872,6 +1987,7 @@
       shape: shape,
       vertices: newcoords,
       worldVertices: worldVertices,
+      friction: friction,
     };
   }
 
@@ -2031,6 +2147,8 @@
   const idleTimerElem = requireElementById("idle_timer");
   const parentageSummaryElem = requireElementById("parentage-summary");
   const parentageListElem = requireElementById("parentage-list");
+  const selectedCarSummaryElem = requireElementById("selected-car-summary");
+  const selectedCarComponentsElem = requireElementById("selected-car-components");
 
   const camera = {
     speed: 0.05,
@@ -2047,6 +2165,8 @@
   const minimapcanvas = requireElementById("minimap");
   const minimapctx = get2dContext(minimapcanvas, "minimap");
   const minimapscale = 3;
+  const minimapMinWidth = 800;
+  let minimapPixelWidth = minimapMinWidth;
   let minimapfogdistance = 0;
   let lastFloorSignature = null;
   const fogdistance = requireElementById("minimapfog").style;
@@ -2074,6 +2194,8 @@
   let lastMinimapCameraLeft = null;
   let lastMinimapCameraTop = null;
   let lastParentageSignature = null;
+  let lastSelectedCarSignature = null;
+  let lastSelectedCarRenderTime = 0;
 
   let leaderPosition = {
     x: 0, y: 0
@@ -2106,16 +2228,7 @@
       outputId: "terrain-length-value",
       getValue() { return world_def.maxFloorTiles; },
       setValue(value) {
-        world_def.maxFloorTiles = clamp(parseFiniteInteger(value, world_def.maxFloorTiles), 120, 320);
-      },
-      format(value) { return Math.round(value) + " tiles"; },
-    },
-    {
-      inputId: "terrain-start-flat",
-      outputId: "terrain-start-flat-value",
-      getValue() { return world_def.terrain.startFlatTiles; },
-      setValue(value) {
-        world_def.terrain.startFlatTiles = clamp(parseFiniteInteger(value, world_def.terrain.startFlatTiles), 0, 10);
+        world_def.maxFloorTiles = clamp(parseFiniteInteger(value, world_def.maxFloorTiles), 120, 1024);
       },
       format(value) { return Math.round(value) + " tiles"; },
     },
@@ -2124,7 +2237,7 @@
       outputId: "terrain-max-slope-value",
       getValue() { return Math.round(world_def.terrain.maxAngle * RAD_TO_DEG); },
       setValue(value) {
-        world_def.terrain.maxAngle = clamp(parseFiniteFloat(value, world_def.terrain.maxAngle * RAD_TO_DEG), 20, 60) * DEG_TO_RAD;
+        world_def.terrain.maxAngle = clamp(parseFiniteFloat(value, world_def.terrain.maxAngle * RAD_TO_DEG), 20, 80) * DEG_TO_RAD;
       },
       format(value) { return Math.round(value) + " deg"; },
     },
@@ -2133,7 +2246,7 @@
       outputId: "terrain-slope-change-value",
       getValue() { return roundToTenth(world_def.terrain.maxAngleStep * RAD_TO_DEG); },
       setValue(value) {
-        world_def.terrain.maxAngleStep = clamp(parseFiniteFloat(value, world_def.terrain.maxAngleStep * RAD_TO_DEG), 2, 14) * DEG_TO_RAD;
+        world_def.terrain.maxAngleStep = clamp(parseFiniteFloat(value, world_def.terrain.maxAngleStep * RAD_TO_DEG), 2, 30) * DEG_TO_RAD;
       },
       format(value) { return formatTenth(value) + " deg"; },
     },
@@ -2142,7 +2255,7 @@
       outputId: "terrain-roughness-value",
       getValue() { return roundToTenth(world_def.terrain.noise * 100); },
       setValue(value) {
-        world_def.terrain.noise = clamp(parseFiniteFloat(value, world_def.terrain.noise * 100), 0, 10) / 100;
+        world_def.terrain.noise = clamp(parseFiniteFloat(value, world_def.terrain.noise * 100), 0, 25) / 100;
       },
       format(value) { return formatTenth(value); },
     },
@@ -2151,7 +2264,7 @@
       outputId: "terrain-hill-length-value",
       getValue() { return world_def.terrain.targetMaxTiles; },
       setValue(value) {
-        world_def.terrain.targetMaxTiles = clamp(parseFiniteInteger(value, world_def.terrain.targetMaxTiles), 3, 14);
+        world_def.terrain.targetMaxTiles = clamp(parseFiniteInteger(value, world_def.terrain.targetMaxTiles), 3, 64);
       },
       format(value) { return Math.round(value) + " tiles"; },
     },
@@ -2160,7 +2273,7 @@
       outputId: "terrain-recovery-value",
       getValue() { return roundToTenth(world_def.terrain.heightBias * 100); },
       setValue(value) {
-        world_def.terrain.heightBias = clamp(parseFiniteFloat(value, world_def.terrain.heightBias * 100), 0, 10) / 100;
+        world_def.terrain.heightBias = clamp(parseFiniteFloat(value, world_def.terrain.heightBias * 100), 0, 25) / 100;
       },
       format(value) { return formatTenth(value); },
     },
@@ -2206,7 +2319,7 @@
     world_def.maxFloorTiles = clamp(
       parseFiniteInteger(settings.maxFloorTiles, world_def.maxFloorTiles),
       120,
-      320
+      1024
     );
     world_def.terrain = normalizeTerrainParameters(settings.terrain);
     syncTerrainControlsFromWorld();
@@ -2277,18 +2390,24 @@
   }
 
   function showDistance(distance, height) {
-    if (distance !== lastDistanceDisplay) {
-      distanceMeter.textContent = distance + " meters";
-      lastDistanceDisplay = distance;
-    }
-    if (height !== lastHeightDisplay) {
-      heightMeter.textContent = height + " meters";
-      lastHeightDisplay = height;
+    if (doDraw) {
+      if (distance !== lastDistanceDisplay) {
+        distanceMeter.textContent = distance + " meters";
+        lastDistanceDisplay = distance;
+      }
+      if (height !== lastHeightDisplay) {
+        heightMeter.textContent = height + " meters";
+        lastHeightDisplay = height;
+      }
     }
     if (distance > minimapfogdistance) {
-      fogdistance.width = Math.max(0, 800 - Math.round(distance + 15) * minimapscale) + "px";
+      fogdistance.width = Math.max(0, minimapPixelWidth - Math.round(distance + 15) * minimapscale) + "px";
       minimapfogdistance = distance;
     }
+  }
+
+  function shouldUpdateLivePanels() {
+    return doDraw;
   }
 
   function formatShortId(id) {
@@ -2422,9 +2541,231 @@
     }
   }
 
+  function getCarFocusLabel(carInfo) {
+    return (carInfo && camera.target !== -1 && camera.target === carInfo) ? "Selected" : "Leader";
+  }
+
+  function formatDetailNumber(value, digits) {
+    if (!Number.isFinite(value)) {
+      return "--";
+    }
+    let fixed = value.toFixed(digits);
+    return fixed.replace(/\.?0+$/, "");
+  }
+
+  function formatDetailPoint(point) {
+    if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) {
+      return "--";
+    }
+    return "(" + formatDetailNumber(point.x, 2) + ", " + formatDetailNumber(point.y, 2) + ")";
+  }
+
+  function formatDetailPair(x, y) {
+    if (!Number.isFinite(x) || !Number.isFinite(y)) {
+      return "--";
+    }
+    return formatDetailNumber(x, 2) + ", " + formatDetailNumber(y, 2);
+  }
+
+  function formatDetailPercent(value) {
+    if (!Number.isFinite(value)) {
+      return "--";
+    }
+    return Math.max(0, Math.round(value * 100)) + "%";
+  }
+
+  function readBodyMass(entity) {
+    if (!entity) {
+      return null;
+    }
+    try {
+      let mass = b2.getBodyMass(bodyHandle(entity));
+      return Number.isFinite(mass) ? mass : null;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function appendSelectedCarFact(label, value) {
+    let fact = document.createElement("div");
+    let name = document.createElement("span");
+    let data = document.createElement("strong");
+    fact.className = "selected-car-fact";
+    name.textContent = label;
+    data.textContent = value;
+    fact.appendChild(name);
+    fact.appendChild(data);
+    selectedCarSummaryElem.appendChild(fact);
+  }
+
+  function createComponentDetail(label, value) {
+    let detail = document.createElement("div");
+    let name = document.createElement("span");
+    let data = document.createElement("strong");
+    detail.className = "component-detail";
+    name.textContent = label;
+    data.textContent = value;
+    detail.appendChild(name);
+    detail.appendChild(data);
+    return detail;
+  }
+
+  function createComponentCard(title, rows, primary) {
+    let card = document.createElement("section");
+    let heading = document.createElement("h3");
+    let details = document.createElement("div");
+    card.className = primary ? "selected-car-component primary" : "selected-car-component";
+    details.className = "component-details";
+    heading.textContent = title;
+    card.appendChild(heading);
+    for (let i = 0; i < rows.length; i++) {
+      details.appendChild(createComponentDetail(rows[i][0], rows[i][1]));
+    }
+    card.appendChild(details);
+    return card;
+  }
+
+  function describeCarStatus(carInfo, cwCar) {
+    if (!carInfo || !cwCar) {
+      return "No car";
+    }
+    let status = carRun.getStatus(carInfo.state, {
+      finishLine: currentRunner && currentRunner.scene ? currentRunner.scene.finishLine : Infinity,
+      max_idle_timer: max_idle_timer,
+    });
+    let label = status === 1 ? "Finished" : status === -1 ? "Stopped" : "Active";
+    if (carInfo.def && carInfo.def.is_elite) {
+      label += " / Elite";
+    }
+    return label;
+  }
+
+  function getCurrentCarScore(carInfo) {
+    if (!carInfo || !carInfo.state || carInfo.state.frames <= 0) {
+      return null;
+    }
+    return carRun.calculateScore(carInfo.state, world_def);
+  }
+
+  function getSelectedCarSignature(carInfo, focusLabel) {
+    if (!carInfo || !carMap.has(carInfo)) {
+      return "none|" + (generationState ? generationState.counter : "?");
+    }
+    let cwCar = carMap.get(carInfo);
+    let position = cwCar.getPosition();
+    let velocity = getBodyVelocity(carInfo.car.chassis);
+    let state = carInfo.state || {};
+    let def = carInfo.def || {};
+    return [
+      focusLabel,
+      carInfo.index,
+      def.id || "",
+      generationState ? generationState.counter : "?",
+      formatDetailPair(position.x, position.y),
+      formatDetailPair(velocity.x, velocity.y),
+      state.idle_timer,
+      state.frames,
+      state.maxPositionx,
+      cwCar.alive
+    ].join("|");
+  }
+
+  function renderEmptySelectedCarPanel() {
+    appendSelectedCarFact("Focus", "No car");
+    appendSelectedCarFact("Race", generationState ? formatGenerationLabel(generationState.counter) : "G?");
+    selectedCarComponentsElem.appendChild(createComponentCard("Vehicle", [
+      ["Status", "No active car"],
+      ["Components", "--"]
+    ], true));
+  }
+
+  function renderSelectedCarPanel(force) {
+    let now = typeof performance === "object" && typeof performance.now === "function"
+      ? performance.now()
+      : Date.now();
+    if (!force && now - lastSelectedCarRenderTime < 250) {
+      return;
+    }
+    lastSelectedCarRenderTime = now;
+
+    let carInfo = getParentageCarInfo();
+    let focusLabel = getCarFocusLabel(carInfo);
+    let signature = getSelectedCarSignature(carInfo, focusLabel);
+    if (signature === lastSelectedCarSignature) {
+      return;
+    }
+    lastSelectedCarSignature = signature;
+    selectedCarSummaryElem.textContent = "";
+    selectedCarComponentsElem.textContent = "";
+
+    if (!carInfo || !carMap.has(carInfo)) {
+      renderEmptySelectedCarPanel();
+      return;
+    }
+
+    let cwCar = carMap.get(carInfo);
+    let carInstance = carInfo.car;
+    let typedDef = createInstance.applyTypes(generationConfig.constants.schema, carInfo.def || {});
+    let position = cwCar.getPosition();
+    let velocity = getBodyVelocity(carInstance.chassis);
+    let score = getCurrentCarScore(carInfo);
+    let idleRatio = carInfo.state ? carInfo.state.idle_timer / max_idle_timer : null;
+    let chassisDensity = calculateChassisDensityWithDrivetrainCost(typedDef);
+    let baseDensity = typedDef.chassis_density[0];
+    let drivetrainDensityCost = chassisDensity - baseDensity;
+
+    appendSelectedCarFact("Focus", focusLabel + " " + formatCarLabel(carInfo.index));
+    appendSelectedCarFact("Status", describeCarStatus(carInfo, cwCar));
+    appendSelectedCarFact("Position", formatDetailPoint(position));
+    appendSelectedCarFact("Velocity", formatDetailPair(velocity.x, velocity.y));
+    appendSelectedCarFact("Idle reserve", formatDetailPercent(idleRatio));
+    appendSelectedCarFact("Score", score ? formatDetailNumber(score.v, 2) : "--");
+    appendSelectedCarFact("Distance", score ? formatDetailNumber(score.x, 2) + " m" : "--");
+    appendSelectedCarFact("ID", formatShortId(carInfo.def && carInfo.def.id));
+
+    let chassisRows = [
+      ["Mass", formatDetailNumber(readBodyMass(carInstance.chassis), 2)],
+      ["Base density", formatDetailNumber(baseDensity, 2)],
+      ["Effective density", formatDetailNumber(chassisDensity, 2)],
+      ["Triangles", carInstance.chassis.triangles.length.toString()]
+    ];
+    for (let i = 0; i < carInstance.chassis.vertex_list.length; i++) {
+      chassisRows.push(["Vertex " + i, formatDetailPoint(carInstance.chassis.vertex_list[i])]);
+    }
+    selectedCarComponentsElem.appendChild(createComponentCard("Chassis", chassisRows, true));
+
+    selectedCarComponentsElem.appendChild(createComponentCard("Drivetrain", [
+      ["Power", formatDetailNumber(typedDef.motor_power[0], 2)],
+      ["Gearing", formatDetailNumber(typedDef.motor_gearing[0], 2)],
+      ["Density cost", formatDetailNumber(drivetrainDensityCost, 2)],
+      ["Base motor", formatDetailNumber(world_def.motorSpeed, 2)]
+    ], false));
+
+    for (let i = 0; i < carInstance.wheels.length; i++) {
+      let wheel = carInstance.wheels[i];
+      let suspension = wheel.suspension || {};
+      let motor = wheel.motor || {};
+      let mountVertexIndex = typedDef.wheel_vertex[i];
+      let mountPoint = carInstance.chassis.vertex_list[mountVertexIndex];
+      selectedCarComponentsElem.appendChild(createComponentCard("Wheel " + (i + 1), [
+        ["Radius", formatDetailNumber(wheel.radius, 2)],
+        ["Density", formatDetailNumber(wheel.density, 2)],
+        ["Friction", formatDetailNumber(wheel.friction, 2)],
+        ["Mass", formatDetailNumber(readBodyMass(wheel), 2)],
+        ["Mount", "V" + mountVertexIndex + " " + formatDetailPoint(mountPoint)],
+        ["Travel", formatDetailNumber(suspension.travel, 2)],
+        ["Limits", formatDetailNumber(suspension.lowerTranslation, 2) + " / " + formatDetailNumber(suspension.upperTranslation, 2)],
+        ["Stiffness", formatDetailNumber(suspension.hertz, 2) + " Hz"],
+        ["Damping", formatDetailNumber(suspension.dampingRatio, 2)],
+        ["Torque", formatDetailNumber(motor.maxMotorTorque, 2)],
+        ["Motor speed", formatDetailNumber(motor.motorSpeed, 2)]
+      ], false));
+    }
+  }
+
   function renderParentagePanel() {
     let carInfo = getParentageCarInfo();
-    let focusLabel = (carInfo && camera.target !== -1 && camera.target === carInfo) ? "Selected" : "Leader";
+    let focusLabel = getCarFocusLabel(carInfo);
     let signature = getParentageSignature(carInfo, focusLabel);
     if (signature === lastParentageSignature) {
       return;
@@ -2478,11 +2819,15 @@
     leaderPosition = {
       x: 0, y: 0
     };
-    generationMeter.textContent = generationState.counter.toString();
-    carsElem.textContent = "";
-    populationMeter.textContent = generationConfig.constants.generationSize.toString();
     lastParentageSignature = null;
-    renderParentagePanel();
+    lastSelectedCarSignature = null;
+    if (shouldUpdateLivePanels()) {
+      generationMeter.textContent = generationState.counter.toString();
+      carsElem.textContent = "";
+      populationMeter.textContent = generationConfig.constants.generationSize.toString();
+      renderParentagePanel();
+      renderSelectedCarPanel(true);
+    }
   }
 
   /* ==== END Genration ====================================================== */
@@ -2525,7 +2870,10 @@
   function cw_setCameraTarget(k) {
     if (k === -1) {
       camera.target = -1;
-      renderParentagePanel();
+      if (shouldUpdateLivePanels()) {
+        renderParentagePanel();
+        renderSelectedCarPanel(true);
+      }
       return;
     }
     // k can be a numeric index from the HTML onclick or a car info object
@@ -2539,7 +2887,10 @@
     } else {
       camera.target = k;
     }
-    renderParentagePanel();
+    if (shouldUpdateLivePanels()) {
+      renderParentagePanel();
+      renderSelectedCarPanel(true);
+    }
   }
 
   function cw_setCameraPosition() {
@@ -2617,6 +2968,7 @@
       doDraw = true;
       clearInterval(cw_runningInterval);
       cw_runningInterval = null;
+      refreshLivePanels();
       cw_startSimulation();
     }
   }
@@ -2628,9 +2980,10 @@
     let floorSignature = getFloorSignature();
     let floorChanged = (lastFloorSignature !== floorSignature);
     lastFloorSignature = floorSignature;
+    cw_sizeMiniMap(floorTiles);
     if (floorChanged) {
       minimapfogdistance = 0;
-      fogdistance.width = "800px";
+      fogdistance.width = Math.max(0, minimapPixelWidth - 2) + "px";
     }
     minimapctx.clearRect(0, 0, minimapcanvas.width, minimapcanvas.height);
     minimapctx.strokeStyle = "#2563eb";
@@ -2642,6 +2995,22 @@
       minimapctx.lineTo((tile_position.x + 5) * minimapscale, (-tile_position.y + 35) * minimapscale);
     }
     minimapctx.stroke();
+  }
+
+  function cw_sizeMiniMap(floorTiles) {
+    let lastTile = floorTiles[floorTiles.length - 1];
+    let finishPoint = lastTile && lastTile.worldVertices ? lastTile.worldVertices[3] : null;
+    let trackWidth = finishPoint ? Math.ceil((finishPoint.x + 7) * minimapscale) : minimapMinWidth;
+    minimapPixelWidth = Math.max(minimapMinWidth, trackWidth);
+    let width = minimapPixelWidth + "px";
+    if (minimapholder.style.width !== width) {
+      minimapholder.style.width = width;
+      minimapholder.style.minWidth = width;
+    }
+    if (minimapcanvas.width !== minimapPixelWidth) {
+      minimapcanvas.width = minimapPixelWidth;
+      minimapcanvas.style.width = width;
+    }
   }
 
   /* ==== END Drawing ======================================================== */
@@ -2659,7 +3028,7 @@
 
       let car = carInfo.car, score = carInfo.score;
       let cwCar = carMap.get(carInfo);
-      cwCar.kill(currentRunner, world_def);
+      cwCar.kill(currentRunner, world_def, shouldUpdateLivePanels());
 
       // refocus camera to leader on death
       if (camera.target === carInfo) {
@@ -2672,14 +3041,19 @@
       score.i = generationState.counter;
 
       cw_deadCars++;
-      let generationSize = generationConfig.constants.generationSize;
-      populationMeter.textContent = (generationSize - cw_deadCars).toString();
+      if (shouldUpdateLivePanels()) {
+        let generationSize = generationConfig.constants.generationSize;
+        populationMeter.textContent = (generationSize - cw_deadCars).toString();
+      }
 
       if (leaderPosition.leader === k) {
         // leader is dead, find new leader
         cw_findLeader();
       }
-      renderParentagePanel();
+      if (shouldUpdateLivePanels()) {
+        renderParentagePanel();
+        renderSelectedCarPanel(true);
+      }
     },
     generationEnd(results) {
       cleanupRound(results);
@@ -2693,6 +3067,11 @@
       Math.round(leaderPosition.x * 100) / 100,
       Math.round(leaderPosition.y * 100) / 100
     );
+    if (shouldUpdateLivePanels()) {
+      renderSelectedCarPanel(false);
+    } else {
+      cw_setCameraPosition();
+    }
   }
 
   function gameLoop() {
@@ -2718,18 +3097,64 @@
       car.minimapmarker.style.left = markerLeft;
       car.lastMarkerLeft = markerLeft;
     }
-    let idleTimerWidth = Math.round((car.car.state.idle_timer / max_idle_timer) * 100) + "%";
-    if (idleTimerWidth !== car.lastIdleTimerWidth) {
-      car.idleTimerBar.width = idleTimerWidth;
-      car.lastIdleTimerWidth = idleTimerWidth;
+    if (shouldUpdateLivePanels()) {
+      updateIdleTimerUI(car);
     }
     if (position.x > leaderPosition.x) {
       leaderPosition = position;
       leaderPosition.leader = k;
-      if (camera.target === -1) {
+      if (camera.target === -1 && shouldUpdateLivePanels()) {
         renderParentagePanel();
       }
     }
+  }
+
+  function updateIdleTimerUI(cwCar) {
+    let idleTimerWidth = Math.round((cwCar.car.state.idle_timer / max_idle_timer) * 100) + "%";
+    if (idleTimerWidth !== cwCar.lastIdleTimerWidth) {
+      cwCar.idleTimerBar.width = idleTimerWidth;
+      cwCar.lastIdleTimerWidth = idleTimerWidth;
+    }
+  }
+
+  function refreshIdleTimerPanel() {
+    let activeCars = new Set();
+    carMap.forEach(function (cwCar, carInfo) {
+      activeCars.add(carInfo.index);
+      cwCar.idleTimerText.textContent = carInfo.index.toString();
+      cwCar.idleTimerBar.backgroundColor = cwCar.is_elite ? "#2563eb" : "#d49718";
+      updateIdleTimerUI(cwCar);
+    });
+    for (let i = 0; i < generationConfig.constants.generationSize; i++) {
+      if (activeCars.has(i)) {
+        continue;
+      }
+      let idleTimerBarElement = requireElementById("idle_timer" + i);
+      idleTimerBarElement.style.width = "0";
+      let idleTimerText = idleTimerBarElement.nextElementSibling;
+      if (idleTimerText) {
+        idleTimerText.textContent = "\u2020";
+      }
+    }
+  }
+
+  function refreshLivePanels() {
+    if (!generationState) {
+      return;
+    }
+    generationMeter.textContent = generationState.counter.toString();
+    populationMeter.textContent = carMap.size.toString();
+    lastDistanceDisplay = null;
+    lastHeightDisplay = null;
+    showDistance(
+      Math.round(leaderPosition.x * 100) / 100,
+      Math.round(leaderPosition.y * 100) / 100
+    );
+    refreshIdleTimerPanel();
+    lastParentageSignature = null;
+    lastSelectedCarSignature = null;
+    renderParentagePanel();
+    renderSelectedCarPanel(true);
   }
 
   function cw_findLeader() {
@@ -2833,9 +3258,12 @@
     topScoresElem.textContent = "";
     let _gc = graphCanvas;
     cw_clearGraphics(_gc, get2dContext(_gc, "score graph"), 400, 250);
+    cw_updateGraphScaleLabels(1);
     resetGraphState();
     lastParentageSignature = null;
+    lastSelectedCarSignature = null;
     renderParentagePanel();
+    renderSelectedCarPanel(true);
   }
 
   function cw_resetWorld() {
@@ -2870,7 +3298,11 @@
       ghost_add_replay_frame(car.replay, car.car.car);
     }
     lastParentageSignature = null;
-    renderParentagePanel();
+    lastSelectedCarSignature = null;
+    if (shouldUpdateLivePanels()) {
+      renderParentagePanel();
+      renderSelectedCarPanel(true);
+    }
   }
 
   requireElementById("fast-forward").addEventListener("click", fastForward);
@@ -3148,7 +3580,7 @@
   function cw_setEliteSize(clones) {
     generationConfig.constants.championLength = clamp(
       parseFiniteInteger(clones, generationConfig.constants.championLength),
-      1,
+      0,
       generationConfig.constants.generationSize
     );
   }
