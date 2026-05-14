@@ -1618,27 +1618,75 @@
     };
   }
 
+  const TERRAIN_START_FLAT_TILES = 4;
+  const TERRAIN_MAX_HEIGHT = 7;
+
   function cw_createFloor(world, floorseed, dimensions, maxFloorTiles, mutable_floor) {
     let last_tile = null;
     let tile_position = vec2(-5, 0);
     let cw_floorTiles = [];
     Math.seedrandom(floorseed);
+    let terrain = cw_createTerrainState(mutable_floor);
     for (let k = 0; k < maxFloorTiles; k++) {
-      if (!mutable_floor) {
-        // keep old impossible tracks if not using mutable floors
-        last_tile = cw_createFloorTile(
-          world, dimensions, tile_position, (Math.random() * 3 - 1.5) * 1.5 * k / maxFloorTiles
-        );
-      } else {
-        // if path is mutable over races, create smoother tracks
-        last_tile = cw_createFloorTile(
-          world, dimensions, tile_position, (Math.random() * 3 - 1.5) * 1.2 * k / maxFloorTiles
-        );
-      }
+      last_tile = cw_createFloorTile(
+        world, dimensions, tile_position, cw_nextFloorAngle(terrain, k, maxFloorTiles, tile_position.y)
+      );
       cw_floorTiles.push(last_tile);
       tile_position = cloneVec2(last_tile.worldVertices[3]);
     }
     return cw_floorTiles;
+  }
+
+  function cw_createTerrainState(mutable_floor) {
+    return {
+      angle: 0,
+      targetAngle: 0,
+      targetTilesLeft: 0,
+      lastTargetSign: 1,
+      maxAngle: mutable_floor ? 0.5 : 0.72,
+      maxAngleStep: mutable_floor ? 0.06 : 0.1,
+      noise: mutable_floor ? 0.018 : 0.032,
+      heightBias: mutable_floor ? 0.055 : 0.045,
+    };
+  }
+
+  function cw_nextFloorAngle(terrain, tileIndex, maxFloorTiles, currentHeight) {
+    if (tileIndex < TERRAIN_START_FLAT_TILES) {
+      terrain.angle = 0;
+      terrain.targetAngle = 0;
+      terrain.targetTilesLeft = 0;
+      return 0;
+    }
+
+    let progress = maxFloorTiles > 1 ? tileIndex / (maxFloorTiles - 1) : 1;
+    let difficulty = cw_smoothStep(progress * 1.35);
+    let allowedAngle = terrain.maxAngle * (0.48 + difficulty * 0.52);
+    if (terrain.targetTilesLeft <= 0) {
+      terrain.targetTilesLeft = Math.floor(4 + Math.random() * (11 - difficulty * 4));
+      terrain.lastTargetSign = Math.random() < 0.72 ? -terrain.lastTargetSign : terrain.lastTargetSign;
+      let minimumAngle = allowedAngle * (0.28 + difficulty * 0.22);
+      terrain.targetAngle = terrain.lastTargetSign * (
+        minimumAngle + Math.random() * (allowedAngle - minimumAngle)
+      );
+    }
+
+    terrain.targetTilesLeft--;
+    let heightCorrection = clamp(-currentHeight / TERRAIN_MAX_HEIGHT, -1, 1) * terrain.heightBias;
+    let desiredAngle = terrain.targetAngle + heightCorrection + (Math.random() * 2 - 1) * terrain.noise;
+    desiredAngle = clamp(desiredAngle, -allowedAngle, allowedAngle);
+
+    let angleStep = clamp(
+      desiredAngle - terrain.angle,
+      -terrain.maxAngleStep,
+      terrain.maxAngleStep
+    );
+    terrain.angle = clamp(terrain.angle + angleStep, -allowedAngle, allowedAngle);
+    return terrain.angle;
+  }
+
+  function cw_smoothStep(value) {
+    let t = clamp(value, 0, 1);
+    return t * t * (3 - 2 * t);
   }
 
 
