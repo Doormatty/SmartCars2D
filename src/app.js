@@ -70,9 +70,9 @@
   const TERRAIN_DEFAULTS = Object.freeze({
     startFlatTiles: 3,
     maxHeight: 6,
-    maxAngle: 50 * DEG_TO_RAD,
-    maxAngleStep: 7.5 * DEG_TO_RAD,
-    noise: 0.045,
+    maxAngle: 80 * DEG_TO_RAD,
+    maxAngleStep: 30 * DEG_TO_RAD,
+    noise: 0.25,
     heightBias: 0.032,
     frictionMin: 0.35,
     frictionMax: 1.65,
@@ -344,6 +344,84 @@
     return normalized;
   }
 
+  function normalizeGenomeForComparison(schema, source) {
+    let clone = {};
+    let keys = getSchemaKeys(schema);
+    for (let i = 0; i < keys.length; i++) {
+      let key = keys[i];
+      clone[key] = normalizeGeneValues(schema[key], key, source && source[key]);
+    }
+    return clone;
+  }
+
+  function getGenomeDistance(schema, left, right) {
+    let keys = getSchemaKeys(schema);
+    let geneCount = 0;
+    let totalDistance = 0;
+    for (let keyIndex = 0; keyIndex < keys.length; keyIndex++) {
+      let key = keys[keyIndex];
+      let schemaProp = schema[key];
+      let length = getSchemaLength(schemaProp, key);
+      let leftValues = left[key] || [];
+      let rightValues = right[key] || [];
+      for (let valueIndex = 0; valueIndex < length; valueIndex++) {
+        let leftValue = Number.isFinite(leftValues[valueIndex]) ? leftValues[valueIndex] : getDefaultNormal(schemaProp);
+        let rightValue = Number.isFinite(rightValues[valueIndex]) ? rightValues[valueIndex] : getDefaultNormal(schemaProp);
+        totalDistance += Math.abs(leftValue - rightValue);
+        geneCount++;
+      }
+    }
+    return geneCount > 0 ? totalDistance / geneCount : 0;
+  }
+
+  function measureGenomeDiversity(schema, generation) {
+    if (!Array.isArray(generation) || generation.length < 2) {
+      return {
+        averageDistance: 0,
+        nearestDistance: 0,
+        maxDistance: 0,
+        pairCount: 0
+      };
+    }
+
+    let genomes = new Array(generation.length);
+    let nearestDistances = new Array(generation.length);
+    for (let i = 0; i < generation.length; i++) {
+      genomes[i] = normalizeGenomeForComparison(schema, generation[i]);
+      nearestDistances[i] = Infinity;
+    }
+
+    let distanceSum = 0;
+    let maxDistance = 0;
+    let pairCount = 0;
+    for (let i = 0; i < genomes.length; i++) {
+      for (let j = i + 1; j < genomes.length; j++) {
+        let distance = getGenomeDistance(schema, genomes[i], genomes[j]);
+        distanceSum += distance;
+        pairCount++;
+        maxDistance = Math.max(maxDistance, distance);
+        nearestDistances[i] = Math.min(nearestDistances[i], distance);
+        nearestDistances[j] = Math.min(nearestDistances[j], distance);
+      }
+    }
+
+    let nearestSum = 0;
+    let nearestCount = 0;
+    for (let i = 0; i < nearestDistances.length; i++) {
+      if (Number.isFinite(nearestDistances[i])) {
+        nearestSum += nearestDistances[i];
+        nearestCount++;
+      }
+    }
+
+    return {
+      averageDistance: pairCount > 0 ? distanceSum / pairCount : 0,
+      nearestDistance: nearestCount > 0 ? nearestSum / nearestCount : 0,
+      maxDistance: maxDistance,
+      pairCount: pairCount
+    };
+  }
+
 
   /* -------------------------------------------------------------------------
    * machine-learning/create-instance.js
@@ -375,6 +453,7 @@
           index: Number.isInteger(normalizedParents[i].index) ? normalizedParents[i].index : null,
           bornGeneration: Number.isFinite(normalizedParents[i].bornGeneration) ? normalizedParents[i].bornGeneration : null,
           isElite: normalizedParents[i].is_elite === true,
+          origin: typeof normalizedParents[i].origin === "string" ? normalizedParents[i].origin : null,
           ancestry: normalizedParents[i].ancestry,
         };
       }
@@ -539,7 +618,7 @@
       let box2dfps = 60;
       return {
         gravity: { y: 0 }, doSleep: true, floorseed: "abc",
-        maxFloorTiles: 220, mutable_floor: false, motorSpeed: 20,
+        maxFloorTiles: 1024, mutable_floor: true, motorSpeed: 20,
         box2dfps: box2dfps, max_idle_timer: box2dfps * 10,
         tileDimensions: { width: 1.5, height: 0.15 },
         terrain: normalizeTerrainParameters()
@@ -922,8 +1001,10 @@
     const carConstants = carConstruct.carConstants();
     const schema = carConstruct.generateSchema(carConstants);
     const constants = {
-      generationSize: 20, schema: schema, championLength: 1,
-      mutation_range: 1, gen_mutation: 0.05
+      generationSize: 20, schema: schema, championLength: 0,
+      mutation_range: 1, gen_mutation: 0.05,
+      randomImmigrantRate: 0.15,
+      dissimilarParentSampleSize: 4
     };
     let fn = function () {
       let currentChoices = new Map();
@@ -971,9 +1052,15 @@
     ) {
       let champion_length = config.championLength,
         generationSize = config.generationSize,
+        schema = config.schema,
+        generateRandom = config.generateRandom,
         selectFromAllParents = config.selectFromAllParents;
 
       let newGeneration = new Array(generationSize);
+      let openSlots = Math.max(0, generationSize - champion_length);
+      let randomImmigrantCount = getRandomImmigrantCount(config, openSlots);
+      let childLimit = generationSize - randomImmigrantCount;
+      let parentGenomes = createScoreGenomeList(schema, scores);
       let newborn;
       for (let k = 0; k < champion_length; k++) {
         scores[k].def.is_elite = true;
@@ -984,18 +1071,27 @@
         newGeneration[k] = scores[k].def;
       }
       let parentList = [];
-      for (let k = champion_length; k < generationSize; k++) {
+      for (let k = champion_length; k < childLimit; k++) {
         let parent1 = selectFromAllParents(scores, parentList);
-        let parent2 = parent1;
-        while (parent2 === parent1) {
-          parent2 = selectFromAllParents(scores, parentList, parent1);
+        if (!Number.isInteger(parent1) || parent1 < 0 || parent1 >= scores.length) {
+          parent1 = 0;
         }
+        let parent2 = pickDissimilarParent(config, scores, parentGenomes, parent1, parentList);
         let pair = [parent1, parent2]
         parentList.push(pair);
         newborn = makeChild(config, [scores[parent1].def, scores[parent2].def]);
         newborn = mutate(config, newborn);
         newborn.bornGeneration = previousState.counter + 1;
         newborn.is_elite = false;
+        newborn.origin = "bred";
+        newborn.index = k;
+        newGeneration[k] = newborn;
+      }
+      for (let k = childLimit; k < generationSize; k++) {
+        newborn = create.createGenerationZero(schema, generateRandom);
+        newborn.bornGeneration = previousState.counter + 1;
+        newborn.is_elite = false;
+        newborn.origin = "random_immigrant";
         newborn.index = k;
         newGeneration[k] = newborn;
       }
@@ -1027,6 +1123,67 @@
         Math.max(mutation_range),
         gen_mutation
       )
+    }
+
+    function getRandomImmigrantCount(config, openSlots) {
+      if (openSlots <= 0) {
+        return 0;
+      }
+      let rate = clamp(parseFiniteFloat(config.randomImmigrantRate, 0), 0, 1);
+      if (rate <= 0) {
+        return 0;
+      }
+      return clamp(Math.round(openSlots * rate), 1, openSlots);
+    }
+
+    function createScoreGenomeList(schema, scores) {
+      let genomes = new Array(scores.length);
+      for (let i = 0; i < scores.length; i++) {
+        genomes[i] = normalizeGenomeForComparison(schema, scores[i].def);
+      }
+      return genomes;
+    }
+
+    function pickDissimilarParent(config, scores, parentGenomes, parent1, parentList) {
+      if (scores.length < 2) {
+        return parent1;
+      }
+      let sampleSize = Math.max(1, parseFiniteInteger(config.dissimilarParentSampleSize, 1));
+      let bestParent = -1;
+      let bestDistance = -1;
+      for (let sample = 0; sample < sampleSize; sample++) {
+        let candidate = selectDifferentParent(config.selectFromAllParents, scores, parentList, parent1);
+        if (candidate === parent1) {
+          continue;
+        }
+        let distance = getGenomeDistance(config.schema, parentGenomes[parent1], parentGenomes[candidate]);
+        if (distance > bestDistance) {
+          bestDistance = distance;
+          bestParent = candidate;
+        }
+      }
+      if (bestParent !== -1) {
+        return bestParent;
+      }
+      return selectDifferentParent(config.selectFromAllParents, scores, parentList, parent1);
+    }
+
+    function selectDifferentParent(selectFromAllParents, scores, parentList, parent1) {
+      let candidate = parent1;
+      let attempts = Math.max(4, scores.length * 2);
+      while (candidate === parent1 && attempts > 0) {
+        candidate = selectFromAllParents(scores, parentList, parent1);
+        attempts--;
+      }
+      if (candidate !== parent1 && Number.isInteger(candidate) && candidate >= 0 && candidate < scores.length) {
+        return candidate;
+      }
+      for (let i = 0; i < scores.length; i++) {
+        if (i !== parent1) {
+          return i;
+        }
+      }
+      return parent1;
     }
 
     return { generationZero: generationZero, nextGeneration: nextGeneration };
@@ -1459,8 +1616,9 @@
       let graphctx = get2dContext(graphcanvas, "score graph");
       let graphwidth = 400;
       let graphheight = 250;
+      let schema = config && config.schema ? config.schema : generationConfig.constants.schema;
       let nextState = cw_storeGraphScores(
-        lastState, scores, generationSize
+        lastState, scores, generationSize, schema
       );
       let graphScale = cw_getGraphScale(nextState, graphwidth, graphheight);
       cw_clearGraphics(graphcanvas, graphctx, graphwidth, graphheight);
@@ -1474,7 +1632,8 @@
   };
 
 
-  function cw_storeGraphScores(lastState, cw_carScores, generationSize) {
+  function cw_storeGraphScores(lastState, cw_carScores, generationSize, schema) {
+    let diversity = cw_measureScoreDiversity(schema, cw_carScores);
     return {
       cw_topScores: (lastState.cw_topScores || [])
         .concat([cw_carScores[0].score]),
@@ -1487,7 +1646,18 @@
       cw_graphTop: (lastState.cw_graphTop || []).concat([
         cw_carScores[0].score.v
       ]),
+      cw_diversityStats: (lastState.cw_diversityStats || []).concat([
+        diversity
+      ]),
     }
+  }
+
+  function cw_measureScoreDiversity(schema, scores) {
+    let generation = new Array(scores.length);
+    for (let i = 0; i < scores.length; i++) {
+      generation[i] = scores[i].def;
+    }
+    return measureGenomeDiversity(schema, generation);
   }
 
   function cw_getGraphScale(state, graphwidth, graphheight) {
@@ -1640,6 +1810,7 @@
     title.textContent = "Top Scores";
     fragment.appendChild(title);
     fragment.appendChild(document.createElement("br"));
+    cw_appendDiversityStats(fragment, state);
 
     for (let k = 0; k < Math.min(10, cw_topScores.length); k++) {
       let topScore = cw_topScores[k];
@@ -1653,6 +1824,28 @@
       fragment.appendChild(document.createElement("br"));
     }
     elem.replaceChildren(fragment);
+  }
+
+  function cw_appendDiversityStats(fragment, state) {
+    let stats = state.cw_diversityStats || [];
+    let latest = stats.length > 0 ? stats[stats.length - 1] : null;
+    if (!latest) {
+      return;
+    }
+    fragment.appendChild(document.createTextNode(
+      "Diversity avg " + cw_formatDiversityPercent(latest.averageDistance) +
+      " / nearest " + cw_formatDiversityPercent(latest.nearestDistance) +
+      " / max " + cw_formatDiversityPercent(latest.maxDistance)
+    ));
+    fragment.appendChild(document.createElement("br"));
+    fragment.appendChild(document.createElement("br"));
+  }
+
+  function cw_formatDiversityPercent(value) {
+    if (!Number.isFinite(value)) {
+      return "--";
+    }
+    return Math.round(value * 100) + "%";
   }
 
   /* -------------------------------------------------------------------------
@@ -1780,15 +1973,15 @@
     if (this.is_elite) {
       if (shouldUpdateLivePanels()) {
         this.idleTimerBar.backgroundColor = "#2563eb";
+        this.minimapmarker.style.borderLeft = "1px solid #2563eb";
+        this.minimapmarker.textContent = car_def.index.toString();
       }
-      this.minimapmarker.style.borderLeft = "1px solid #2563eb";
-      this.minimapmarker.textContent = car_def.index.toString();
     } else {
       if (shouldUpdateLivePanels()) {
         this.idleTimerBar.backgroundColor = "#d49718";
+        this.minimapmarker.style.borderLeft = "1px solid #d49718";
+        this.minimapmarker.textContent = car_def.index.toString();
       }
-      this.minimapmarker.style.borderLeft = "1px solid #d49718";
-      this.minimapmarker.textContent = car_def.index.toString();
     }
 
   }
@@ -1798,8 +1991,8 @@
   }
 
   cw_Car.prototype.kill = function (currentRunner, constants, updateLivePanels) {
-    this.minimapmarker.style.borderLeft = "1px solid #aeb8bd";
     if (updateLivePanels !== false) {
+      this.minimapmarker.style.borderLeft = "1px solid #aeb8bd";
       let finishLine = currentRunner.scene.finishLine
       let max_idle_timer = constants.max_idle_timer;
       let status = run.getStatus(this.car.state, {
@@ -2127,14 +2320,15 @@
   const carMap = new Map();
 
   let doDraw = true;
+  let liveUiSuspended = false;
   let cw_paused = false;
   let cw_animationFrameId = null;
   let cw_runningInterval = null;
 
   const box2dfps = 60;
   const screenfps = 60;
-  const skipTicks = Math.round(1000 / box2dfps);
-  const maxFrameSkip = skipTicks * 2;
+  const headlessStepBudgetMs = 12;
+  const headlessMaxStepsPerBatch = box2dfps * 8;
 
   const canvas = requireElementById("mainbox");
   const ctx = get2dContext(canvas, "main simulation");
@@ -2183,6 +2377,7 @@
     genCounter: "cw_genCounter",
     ghost: "cw_ghost",
     topScores: "cw_topScores",
+    diversityStats: "cw_diversityStats",
     floorSeed: "cw_floorSeed",
     terrainSettings: "cw_terrainSettings",
   };
@@ -2213,8 +2408,8 @@
     doSleep: true,
     floorseed: btoa(Math.seedrandom()),
     tileDimensions: vec2(1.5, 0.15),
-    maxFloorTiles: 220,
-    mutable_floor: false,
+    maxFloorTiles: 1024,
+    mutable_floor: true,
     terrain: normalizeTerrainParameters(),
     box2dfps: box2dfps,
     motorSpeed: 20,
@@ -2285,6 +2480,7 @@
     cw_graphAverage: [],
     cw_graphElite: [],
     cw_graphTop: [],
+    cw_diversityStats: [],
   };
 
   function resetGraphState() {
@@ -2293,6 +2489,7 @@
       cw_graphAverage: [],
       cw_graphElite: [],
       cw_graphTop: [],
+      cw_diversityStats: [],
     };
   }
 
@@ -2379,8 +2576,6 @@
 
   // ======== Activity State ====
   let currentRunner;
-  let loops = 0;
-  let nextGameTick = Date.now();
 
   function destroyCurrentRunner() {
     if (currentRunner && typeof currentRunner.destroy === "function") {
@@ -2390,15 +2585,16 @@
   }
 
   function showDistance(distance, height) {
-    if (doDraw) {
-      if (distance !== lastDistanceDisplay) {
-        distanceMeter.textContent = distance + " meters";
-        lastDistanceDisplay = distance;
-      }
-      if (height !== lastHeightDisplay) {
-        heightMeter.textContent = height + " meters";
-        lastHeightDisplay = height;
-      }
+    if (!shouldUpdateLivePanels()) {
+      return;
+    }
+    if (distance !== lastDistanceDisplay) {
+      distanceMeter.textContent = distance + " meters";
+      lastDistanceDisplay = distance;
+    }
+    if (height !== lastHeightDisplay) {
+      heightMeter.textContent = height + " meters";
+      lastHeightDisplay = height;
     }
     if (distance > minimapfogdistance) {
       fogdistance.width = Math.max(0, minimapPixelWidth - Math.round(distance + 15) * minimapscale) + "px";
@@ -2407,7 +2603,11 @@
   }
 
   function shouldUpdateLivePanels() {
-    return doDraw;
+    return doDraw && !liveUiSuspended;
+  }
+
+  function shouldCaptureReplay() {
+    return shouldUpdateLivePanels();
   }
 
   function formatShortId(id) {
@@ -2514,6 +2714,9 @@
     }
     if (parent.isElite === true || parent.is_elite === true) {
       details.push("elite");
+    }
+    if (parent.origin === "random_immigrant") {
+      details.push("immigrant");
     }
     return details.length > 0 ? details.join(" / ") : "Recorded parent";
   }
@@ -2636,6 +2839,9 @@
     let label = status === 1 ? "Finished" : status === -1 ? "Stopped" : "Active";
     if (carInfo.def && carInfo.def.is_elite) {
       label += " / Elite";
+    }
+    if (carInfo.def && carInfo.def.origin === "random_immigrant") {
+      label += " / Immigrant";
     }
     return label;
   }
@@ -2785,11 +2991,18 @@
     appendParentageFact("Focus", focusLabel + " " + formatCarLabel(carInfo.index));
     appendParentageFact("Race", generationState ? formatGenerationLabel(generationState.counter) : "G?");
     appendParentageFact("Born", formatGenerationLabel(def.bornGeneration));
+    if (def.origin === "random_immigrant") {
+      appendParentageFact("Origin", "Random immigrant");
+    }
     appendParentageFact("ID", formatShortId(def.id));
 
     let ancestry = Array.isArray(def.ancestry) ? def.ancestry : [];
     if (ancestry.length === 0) {
-      parentageListElem.appendChild(createParentageRow("Base", "Founding vehicle", "No recorded parents", 0, true));
+      if (def.origin === "random_immigrant") {
+        parentageListElem.appendChild(createParentageRow("Base", "Random immigrant", "Injected for diversity", 0, true));
+      } else {
+        parentageListElem.appendChild(createParentageRow("Base", "Founding vehicle", "No recorded parents", 0, true));
+      }
       return;
     }
 
@@ -2821,8 +3034,8 @@
     };
     lastParentageSignature = null;
     lastSelectedCarSignature = null;
+    generationMeter.textContent = generationState.counter.toString();
     if (shouldUpdateLivePanels()) {
-      generationMeter.textContent = generationState.counter.toString();
       carsElem.textContent = "";
       populationMeter.textContent = generationConfig.constants.generationSize.toString();
       renderParentagePanel();
@@ -2953,22 +3166,50 @@
     }
   }
 
+  function clearHeadlessSimulationTimer() {
+    if (cw_runningInterval !== null) {
+      window.clearTimeout(cw_runningInterval);
+      cw_runningInterval = null;
+    }
+  }
+
+  function runHeadlessSimulationBatch() {
+    if (doDraw || cw_paused || !currentRunner) {
+      cw_runningInterval = null;
+      return;
+    }
+
+    let deadline = performance.now() + headlessStepBudgetMs;
+    let steps = 0;
+    do {
+      simulationStep();
+      steps++;
+    } while (
+      !doDraw &&
+      !cw_paused &&
+      currentRunner &&
+      steps < headlessMaxStepsPerBatch &&
+      performance.now() < deadline
+    );
+
+    if (!doDraw && !cw_paused) {
+      cw_runningInterval = window.setTimeout(runHeadlessSimulationBatch, 0);
+    } else {
+      cw_runningInterval = null;
+    }
+  }
+
   function toggleDisplay() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     if (doDraw) {
       doDraw = false;
       cw_stopSimulation();
-      cw_runningInterval = setInterval(function () {
-        let time = performance.now() + (1000 / screenfps);
-        while (time > performance.now()) {
-          simulationStep();
-        }
-      }, 1);
+      cw_paused = false;
+      runHeadlessSimulationBatch();
     } else {
       doDraw = true;
-      clearInterval(cw_runningInterval);
-      cw_runningInterval = null;
-      refreshLivePanels();
+      clearHeadlessSimulationTimer();
+      refreshVisibleSimulationUi();
       cw_startSimulation();
     }
   }
@@ -3017,10 +3258,14 @@
   /* ========================================================================= */
   const uiListeners = {
     preCarStep: function () {
-      ghost_move_frame(ghost);
+      if (shouldCaptureReplay()) {
+        ghost_move_frame(ghost);
+      }
     },
     carStep(car) {
-      updateCarUI(car);
+      if (shouldUpdateLivePanels()) {
+        updateCarUI(car);
+      }
     },
     carDeath(carInfo) {
 
@@ -3035,7 +3280,9 @@
         cw_setCameraTarget(-1);
       }
 
-      ghost_compare_to_replay(cwCar.replay, ghost, score.v);
+      if (shouldCaptureReplay()) {
+        ghost_compare_to_replay(cwCar.replay, ghost, score.v);
+      }
       carMap.delete(carInfo);
 
       score.i = generationState.counter;
@@ -3063,23 +3310,17 @@
 
   function simulationStep() {
     currentRunner.step();
+    if (!shouldUpdateLivePanels()) {
+      return;
+    }
     showDistance(
       Math.round(leaderPosition.x * 100) / 100,
       Math.round(leaderPosition.y * 100) / 100
     );
-    if (shouldUpdateLivePanels()) {
-      renderSelectedCarPanel(false);
-    } else {
-      cw_setCameraPosition();
-    }
+    renderSelectedCarPanel(false);
   }
 
   function gameLoop() {
-    loops = 0;
-    while (!cw_paused && Date.now() > nextGameTick && loops < maxFrameSkip) {
-      nextGameTick += skipTicks;
-      loops++;
-    }
     simulationStep();
     cw_drawScreen();
 
@@ -3122,7 +3363,10 @@
     carMap.forEach(function (cwCar, carInfo) {
       activeCars.add(carInfo.index);
       cwCar.idleTimerText.textContent = carInfo.index.toString();
-      cwCar.idleTimerBar.backgroundColor = cwCar.is_elite ? "#2563eb" : "#d49718";
+      let markerColor = cwCar.is_elite ? "#2563eb" : "#d49718";
+      cwCar.idleTimerBar.backgroundColor = markerColor;
+      cwCar.minimapmarker.style.borderLeft = "1px solid " + markerColor;
+      cwCar.minimapmarker.textContent = carInfo.index.toString();
       updateIdleTimerUI(cwCar);
     });
     for (let i = 0; i < generationConfig.constants.generationSize; i++) {
@@ -3135,6 +3379,9 @@
       if (idleTimerText) {
         idleTimerText.textContent = "\u2020";
       }
+      let minimapMarker = requireElementById("bar" + i);
+      minimapMarker.style.borderLeft = "1px solid #aeb8bd";
+      minimapMarker.textContent = i.toString();
     }
   }
 
@@ -3157,6 +3404,15 @@
     renderSelectedCarPanel(true);
   }
 
+  function refreshVisibleSimulationUi() {
+    if (!shouldUpdateLivePanels() || !currentRunner) {
+      return;
+    }
+    cw_findLeader();
+    cw_drawMiniMap();
+    refreshLivePanels();
+  }
+
   function cw_findLeader() {
     let lead = 0;
     carMap.forEach(function(cwCar, carInfo) {
@@ -3172,10 +3428,29 @@
     });
   }
 
+  function runWithLiveUiSuspended(callback) {
+    let previousSuspended = liveUiSuspended;
+    liveUiSuspended = true;
+    try {
+      callback();
+    } finally {
+      liveUiSuspended = previousSuspended;
+      refreshVisibleSimulationUi();
+    }
+  }
+
   function fastForward() {
-    let gen = generationState.counter;
-    while (gen === generationState.counter) {
-      currentRunner.step();
+    runWithLiveUiSuspended(function () {
+      let gen = generationState.counter;
+      while (gen === generationState.counter) {
+        currentRunner.step();
+      }
+    });
+  }
+
+  function maybeDrawMiniMap() {
+    if (shouldUpdateLivePanels()) {
+      cw_drawMiniMap();
     }
   }
 
@@ -3220,7 +3495,7 @@
     }
     currentRunner = worldRun(world_def, generationState.generation, uiListeners);
     setupCarUI();
-    cw_drawMiniMap();
+    maybeDrawMiniMap();
     resetCarUI();
   }
 
@@ -3229,7 +3504,6 @@
       return;
     }
     cw_paused = false;
-    nextGameTick = Date.now();
     cw_animationFrameId = window.requestAnimationFrame(gameLoop);
   }
 
@@ -3239,10 +3513,7 @@
       window.cancelAnimationFrame(cw_animationFrameId);
       cw_animationFrameId = null;
     }
-    if (cw_runningInterval !== null) {
-      clearInterval(cw_runningInterval);
-      cw_runningInterval = null;
-    }
+    clearHeadlessSimulationTimer();
   }
 
   function cw_clearPopulationWorld() {
@@ -3295,7 +3566,9 @@
       let car = new cw_Car(carInfo, carMap);
       carMap.set(carInfo, car);
       car.replay = ghost_create_replay();
-      ghost_add_replay_frame(car.replay, car.car.car);
+      if (shouldCaptureReplay()) {
+        ghost_add_replay_frame(car.replay, car.car.car);
+      }
     }
     lastParentageSignature = null;
     lastSelectedCarSignature = null;
@@ -3333,6 +3606,7 @@
       localStorage.setItem(STORAGE_KEYS.genCounter, generationState.counter.toString());
       localStorage.setItem(STORAGE_KEYS.ghost, JSON.stringify(ghost));
       localStorage.setItem(STORAGE_KEYS.topScores, JSON.stringify(graphState.cw_topScores));
+      localStorage.setItem(STORAGE_KEYS.diversityStats, JSON.stringify(graphState.cw_diversityStats));
       localStorage.setItem(STORAGE_KEYS.floorSeed, world_def.floorseed);
       localStorage.setItem(STORAGE_KEYS.terrainSettings, JSON.stringify(getTerrainSettingsSnapshot()));
     } catch (error) {
@@ -3351,6 +3625,7 @@
     let restoredCounter;
     let restoredGhost;
     let restoredTopScores;
+    let restoredDiversityStats;
     let restoredFloorSeed;
     let restoredTerrainSettings;
     try {
@@ -3361,11 +3636,15 @@
       restoredCounter = Math.max(0, parseFiniteInteger(localStorage.getItem(STORAGE_KEYS.genCounter), 0));
       restoredGhost = JSON.parse(localStorage.getItem(STORAGE_KEYS.ghost) || "null");
       restoredTopScores = JSON.parse(localStorage.getItem(STORAGE_KEYS.topScores) || "[]");
+      restoredDiversityStats = JSON.parse(localStorage.getItem(STORAGE_KEYS.diversityStats) || "[]");
       if (restoredGhost !== null && typeof restoredGhost !== "object") {
         restoredGhost = null;
       }
       if (!Array.isArray(restoredTopScores)) {
         restoredTopScores = [];
+      }
+      if (!Array.isArray(restoredDiversityStats)) {
+        restoredDiversityStats = [];
       }
       restoredFloorSeed = localStorage.getItem(STORAGE_KEYS.floorSeed) || world_def.floorseed;
       restoredTerrainSettings = JSON.parse(localStorage.getItem(STORAGE_KEYS.terrainSettings) || "null");
@@ -3382,6 +3661,7 @@
     generationState.counter = restoredCounter;
     ghost = restoredGhost;
     graphState.cw_topScores = restoredTopScores;
+    graphState.cw_diversityStats = restoredDiversityStats;
     world_def.floorseed = restoredFloorSeed;
     seedInput.value = world_def.floorseed;
     applyTerrainSettingsSnapshot(restoredTerrainSettings);
