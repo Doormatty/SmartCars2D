@@ -464,7 +464,7 @@
     "suspensionMinDamping": 0.18,
     "suspensionDampingRange": 2.32,
     "motorMinPower": 0.45,
-    "motorPowerRange": 3.55,
+    "motorPowerRange": 2.05,
     "motorMinGearing": 0.55,
     "motorGearingRange": 2.45,
     "motorDensityCost": 95,
