@@ -561,6 +561,7 @@
     { x: 0, y: { gene: 9, sign: -1 } },
     { x: { gene: 10 }, y: { gene: 11, sign: -1 } },
   ];
+  const MIN_CHASSIS_TRIANGLE_CROSS = 0.02;
 
   function getBlueprintGeneCount(blueprint) {
     let maxGene = -1;
@@ -593,7 +594,31 @@
         readChassisBlueprintAxis(point.y, vertexGenes)
       );
     }
-    return vertexList;
+    return keepChassisTrianglesBuildable(vertexList);
+  }
+
+  function keepChassisTrianglesBuildable(vertexList) {
+    let adjusted = new Array(vertexList.length);
+    for (let i = 0; i < vertexList.length; i++) {
+      adjusted[i] = cloneVec2(vertexList[i]);
+    }
+
+    for (let pass = 0; pass < 2; pass++) {
+      for (let i = 0; i < adjusted.length; i++) {
+        let a = adjusted[i];
+        let b = adjusted[(i + 1) % adjusted.length];
+        let cross = Math.abs((a.x * b.y) - (a.y * b.x));
+        if (!Number.isFinite(cross) || cross >= MIN_CHASSIS_TRIANGLE_CROSS) {
+          continue;
+        }
+        let scale = Math.sqrt(MIN_CHASSIS_TRIANGLE_CROSS / Math.max(cross, Number.EPSILON));
+        a.x *= scale;
+        a.y *= scale;
+        b.x *= scale;
+        b.y *= scale;
+      }
+    }
+    return adjusted;
   }
 
   function readChassisBlueprintAxis(axis, vertexGenes) {
@@ -788,24 +813,56 @@
 
 
   function createChassisPart(chassis, vertex1, vertex2, density) {
-    let vertex_list = [
-      cloneVec2(vertex1),
-      cloneVec2(vertex2),
-      vec2(0, 0)
-    ];
-    let shape = b2.createPolygonShape(chassis.body, {
-      vertices: vertex_list,
-      density: density,
-      friction: 10,
-      restitution: 0.2,
-      groupIndex: -1,
-    });
+    let vertex_list = createChassisTriangle(vertex1, vertex2);
+    let shape = createChassisShape(chassis.body, vertex_list, density);
 
     chassis.triangles.push({
       vertices: vertex_list,
       shape: shape,
       density: density,
     });
+  }
+
+  function createChassisTriangle(vertex1, vertex2) {
+    let vertex_list = [
+      cloneVec2(vertex1),
+      cloneVec2(vertex2),
+      vec2(0, 0)
+    ];
+    let cross = (vertex_list[0].x * vertex_list[1].y) - (vertex_list[0].y * vertex_list[1].x);
+    if (Number.isFinite(cross) && cross < 0) {
+      let temp = vertex_list[0];
+      vertex_list[0] = vertex_list[1];
+      vertex_list[1] = temp;
+    }
+    return vertex_list;
+  }
+
+  function createChassisShape(body, vertices, density) {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        return b2.createPolygonShape(body, {
+          vertices: vertices,
+          density: density,
+          friction: 10,
+          restitution: 0.2,
+          groupIndex: -1,
+        });
+      } catch (error) {
+        if (attempt === 2) {
+          throw error;
+        }
+        scaleChassisTriangle(vertices, 1.5);
+      }
+    }
+    throw new Error("Unable to create chassis shape");
+  }
+
+  function scaleChassisTriangle(vertices, scale) {
+    for (let i = 0; i < 2; i++) {
+      vertices[i].x *= scale;
+      vertices[i].y *= scale;
+    }
   }
 
   function createWheel(world, radius, density, friction) {
@@ -2224,6 +2281,16 @@
     }
   }
 
+  function normalizeWorldRunListeners(listeners) {
+    listeners = listeners || {};
+    return {
+      preCarStep: typeof listeners.preCarStep === "function" ? listeners.preCarStep : null,
+      carStep: typeof listeners.carStep === "function" ? listeners.carStep : null,
+      carDeath: typeof listeners.carDeath === "function" ? listeners.carDeath : null,
+      generationEnd: typeof listeners.generationEnd === "function" ? listeners.generationEnd : null,
+    };
+  }
+
   function worldRun(world_def, defs, listeners) {
     if (world_def.mutable_floor) {
       // GHOST DISABLED
@@ -2245,9 +2312,13 @@
       };
     }
     let alivecars = cars.slice();
+    let activeListeners = normalizeWorldRunListeners(listeners);
     return {
       scene: scene,
       cars: cars,
+      setListeners: function (nextListeners) {
+        activeListeners = normalizeWorldRunListeners(nextListeners);
+      },
       destroy: function () {
         if (destroyed) {
           return;
@@ -2267,7 +2338,9 @@
           throw new Error("no more cars");
         }
         b2.step(scene.world, 1 / world_def.box2dfps, 4);
-        listeners.preCarStep();
+        if (activeListeners.preCarStep) {
+          activeListeners.preCarStep();
+        }
         let aliveCount = 0;
         for (let i = 0; i < alivecars.length; i++) {
           let car = alivecars[i];
@@ -2275,19 +2348,23 @@
             world_def, car.car, car.state
           );
           let status = carRun.getStatus(car.state, world_def);
-          listeners.carStep(car);
+          if (activeListeners.carStep) {
+            activeListeners.carStep(car);
+          }
           if (status === 0) {
             alivecars[aliveCount++] = car;
             continue;
           }
           car.score = carRun.calculateScore(car.state, world_def);
-          listeners.carDeath(car);
+          if (activeListeners.carDeath) {
+            activeListeners.carDeath(car);
+          }
 
           destroyCarBody(car.car);
         }
         alivecars.length = aliveCount;
-        if (alivecars.length === 0) {
-          listeners.generationEnd(cars);
+        if (alivecars.length === 0 && activeListeners.generationEnd) {
+          activeListeners.generationEnd(cars);
         }
       }
     }
@@ -2327,8 +2404,8 @@
 
   const box2dfps = 60;
   const screenfps = 60;
-  const headlessStepBudgetMs = 12;
-  const headlessMaxStepsPerBatch = box2dfps * 8;
+  const headlessStepBudgetMs = 40;
+  const headlessMaxStepsPerBatch = box2dfps * 20;
 
   const canvas = requireElementById("mainbox");
   const ctx = get2dContext(canvas, "main simulation");
@@ -2608,6 +2685,10 @@
 
   function shouldCaptureReplay() {
     return shouldUpdateLivePanels();
+  }
+
+  function shouldUseHeadlessRunner() {
+    return !doDraw;
   }
 
   function formatShortId(id) {
@@ -3027,20 +3108,25 @@
     generationState = manageRound.generationZero(generationConfig());
   }
 
-  function resetCarUI() {
+  function resetRunTracking() {
     cw_deadCars = 0;
     leaderPosition = {
       x: 0, y: 0
     };
     lastParentageSignature = null;
     lastSelectedCarSignature = null;
-    generationMeter.textContent = generationState.counter.toString();
-    if (shouldUpdateLivePanels()) {
-      carsElem.textContent = "";
-      populationMeter.textContent = generationConfig.constants.generationSize.toString();
-      renderParentagePanel();
-      renderSelectedCarPanel(true);
+  }
+
+  function resetCarUI() {
+    resetRunTracking();
+    if (!shouldUpdateLivePanels()) {
+      return;
     }
+    generationMeter.textContent = generationState.counter.toString();
+    carsElem.textContent = "";
+    populationMeter.textContent = generationConfig.constants.generationSize.toString();
+    renderParentagePanel();
+    renderSelectedCarPanel(true);
   }
 
   /* ==== END Genration ====================================================== */
@@ -3203,12 +3289,16 @@
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     if (doDraw) {
       doDraw = false;
+      syncCurrentRunnerListeners();
+      suspendVisibleCarUI();
       cw_stopSimulation();
       cw_paused = false;
       runHeadlessSimulationBatch();
     } else {
       doDraw = true;
       clearHeadlessSimulationTimer();
+      syncCurrentRunnerListeners();
+      setupCarUI();
       refreshVisibleSimulationUi();
       cw_startSimulation();
     }
@@ -3306,6 +3396,45 @@
       cleanupRound(results);
       return cw_newRound(results);
     }
+  }
+
+  const headlessListeners = {
+    carDeath(carInfo) {
+      if (carInfo.score) {
+        carInfo.score.i = generationState.counter;
+      }
+      cw_deadCars++;
+      if (camera.target === carInfo) {
+        camera.target = -1;
+      }
+      if (leaderPosition.leader === carInfo.index) {
+        leaderPosition.leader = undefined;
+      }
+    },
+    generationEnd(results) {
+      cleanupRound(results);
+      return cw_newRound(results);
+    }
+  };
+
+  function getSimulationListeners() {
+    return shouldUseHeadlessRunner() ? headlessListeners : uiListeners;
+  }
+
+  function createWorldRunner(defs) {
+    return worldRun(world_def, defs, getSimulationListeners());
+  }
+
+  function syncCurrentRunnerListeners() {
+    if (currentRunner && typeof currentRunner.setListeners === "function") {
+      currentRunner.setListeners(getSimulationListeners());
+    }
+  }
+
+  function suspendVisibleCarUI() {
+    carMap.clear();
+    lastParentageSignature = null;
+    lastSelectedCarSignature = null;
   }
 
   function simulationStep() {
@@ -3493,8 +3622,10 @@
     } else {
       ghost_reset_ghost(ghost);
     }
-    currentRunner = worldRun(world_def, generationState.generation, uiListeners);
-    setupCarUI();
+    currentRunner = createWorldRunner(generationState.generation);
+    if (!shouldUseHeadlessRunner()) {
+      setupCarUI();
+    }
     maybeDrawMiniMap();
     resetCarUI();
   }
@@ -3548,9 +3679,7 @@
 
     Math.seedrandom();
     cw_generationZero();
-    currentRunner = worldRun(
-      world_def, generationState.generation, uiListeners
-    );
+    currentRunner = createWorldRunner(generationState.generation);
 
     ghost = ghost_create_ghost();
     resetCarUI();
@@ -3561,8 +3690,15 @@
   }
 
   function setupCarUI() {
+    carMap.clear();
+    if (shouldUseHeadlessRunner() || !currentRunner) {
+      return;
+    }
     for (let i = 0; i < currentRunner.cars.length; i++) {
       let carInfo = currentRunner.cars[i];
+      if (carRun.getStatus(carInfo.state, world_def) !== 0) {
+        continue;
+      }
       let car = new cw_Car(carInfo, carMap);
       carMap.set(carInfo, car);
       car.replay = ghost_create_replay();
@@ -3593,7 +3729,7 @@
     Math.seedrandom();
     cw_generationZero();
     ghost = ghost_create_ghost();
-    currentRunner = worldRun(world_def, generationState.generation, uiListeners);
+    currentRunner = createWorldRunner(generationState.generation);
     setupCarUI();
     cw_drawMiniMap();
     resetCarUI();
@@ -3666,7 +3802,7 @@
     seedInput.value = world_def.floorseed;
     applyTerrainSettingsSnapshot(restoredTerrainSettings);
 
-    currentRunner = worldRun(world_def, generationState.generation, uiListeners);
+    currentRunner = createWorldRunner(generationState.generation);
     setupCarUI();
     cw_drawMiniMap();
     Math.seedrandom();
@@ -3761,7 +3897,7 @@
     cw_generationZero();
     ghost = ghost_create_ghost();
     resetCarUI();
-    currentRunner = worldRun(world_def, generationState.generation, uiListeners);
+    currentRunner = createWorldRunner(generationState.generation);
     setupCarUI();
     cw_drawMiniMap();
     cw_startSimulation();
