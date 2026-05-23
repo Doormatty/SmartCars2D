@@ -152,7 +152,7 @@ select:focus {
 
 .status-strip {
     display: grid;
-    grid-template-columns: repeat(4, minmax(140px, 1fr));
+    grid-template-columns: repeat(7, minmax(118px, 1fr));
     gap: 12px;
     margin: 16px 0;
 }
@@ -171,17 +171,30 @@ select:focus {
     display: block;
     min-height: 1.5em;
     margin-top: 7px;
-    font-size: 1.35rem;
+    font-size: 1.08rem;
     line-height: 1.15;
     font-weight: 850;
+    overflow-wrap: anywhere;
 }
 
 .metric-population {
     border-left-color: var(--blue);
 }
 
+.metric-leader {
+    border-left-color: var(--green);
+}
+
 .metric-distance {
     border-left-color: var(--amber);
+}
+
+.metric-progress {
+    border-left-color: var(--teal);
+}
+
+.metric-section {
+    border-left-color: #8d6e63;
 }
 
 .metric-height {
@@ -548,6 +561,95 @@ select:focus {
 .parentage-surface,
 .roster-surface {
     overflow: hidden;
+}
+
+.metric-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    padding: 14px 14px 0;
+}
+
+.metric-grid + .metric-grid {
+    padding-top: 8px;
+}
+
+.compact-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.metric-fact {
+    min-width: 0;
+    min-height: 52px;
+    padding: 8px 10px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: var(--surface-strong);
+}
+
+.metric-fact span {
+    display: block;
+    color: var(--muted);
+    font-size: 0.68rem;
+    font-weight: 850;
+    text-transform: uppercase;
+}
+
+.metric-fact strong {
+    display: block;
+    overflow: hidden;
+    margin-top: 3px;
+    font-size: 0.88rem;
+    line-height: 1.2;
+    font-weight: 850;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.course-section-list {
+    display: grid;
+    max-height: 176px;
+    gap: 6px;
+    margin: 0;
+    padding: 12px 14px 0;
+    overflow: auto;
+    list-style: none;
+}
+
+.course-section-item {
+    display: grid;
+    grid-template-columns: 10px minmax(0, 0.9fr) minmax(0, 1fr);
+    gap: 8px;
+    align-items: center;
+    min-height: 34px;
+    padding: 6px 8px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: #fff;
+}
+
+.course-section-marker {
+    width: 10px;
+    height: 20px;
+    border-radius: 3px;
+}
+
+.course-section-item strong {
+    overflow: hidden;
+    font-size: 0.8rem;
+    line-height: 1.2;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.course-section-item span:last-child {
+    overflow: hidden;
+    color: var(--muted);
+    font-size: 0.72rem;
+    font-weight: 750;
+    text-align: right;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .buttons {

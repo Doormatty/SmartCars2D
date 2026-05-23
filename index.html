@@ -5,6 +5,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Evolution Garage</title>
+  <link rel="icon" href="data:,">
   <link rel="stylesheet" href="styles.css">
 </head>
 
@@ -34,9 +35,21 @@
         <span>Cars alive</span>
         <strong id="population"></strong>
       </div>
+      <div class="metric metric-leader">
+        <span>Leader</span>
+        <strong id="leader-meter">--</strong>
+      </div>
       <div class="metric metric-distance">
         <span>Distance</span>
         <strong id="distancemeter"></strong>
+      </div>
+      <div class="metric metric-progress">
+        <span>Course</span>
+        <strong id="course-progress-meter">--</strong>
+      </div>
+      <div class="metric metric-section">
+        <span>Section</span>
+        <strong id="course-section-meter">--</strong>
       </div>
       <div class="metric metric-height">
         <span>Height</span>
@@ -118,7 +131,7 @@
             <div class="panel-heading compact">
               <div>
                 <p class="section-kicker">Inspection</p>
-                <h2>Selected Car</h2>
+                <h2>Vehicle Inspector</h2>
               </div>
             </div>
 
@@ -148,13 +161,96 @@
           </div>
         </section>
 
+        <section class="surface terrain-surface">
+          <div class="panel-heading compact">
+            <div>
+              <p class="section-kicker">Course</p>
+              <h2>Course Builder</h2>
+            </div>
+          </div>
+
+          <div id="course-summary" class="metric-grid compact-grid"></div>
+          <ol id="course-section-list" class="course-section-list"></ol>
+
+          <table class="settings-table terrain-table">
+            <tr>
+              <td><label for="course-preset">Preset</label></td>
+              <td>
+                <select id="course-preset">
+                  <option value="grand_tour" selected="selected">Grand Tour</option>
+                  <option value="proving_ground">Proving Ground</option>
+                  <option value="grip_gauntlet">Grip Gauntlet</option>
+                  <option value="mountain_pass">Mountain Pass</option>
+                </select>
+              </td>
+            </tr>
+            <tr>
+              <td><label for="floor">Course mode</label></td>
+              <td>
+                <select id="floor">
+                  <option value="0">Fixed</option>
+                  <option value="1" selected="selected">Mutable</option>
+                </select>
+              </td>
+            </tr>
+            <tr>
+              <td><label for="terrain-length">Length</label></td>
+              <td>
+                <div class="terrain-control">
+                  <input id="terrain-length" type="range" min="120" max="1024" step="8" value="1024" />
+                  <output id="terrain-length-value" for="terrain-length">1024 tiles</output>
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <td><label for="course-difficulty">Difficulty</label></td>
+              <td>
+                <div class="terrain-control">
+                  <input id="course-difficulty" type="range" min="50" max="180" step="5" value="100" />
+                  <output id="course-difficulty-value" for="course-difficulty">100%</output>
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <td><label for="terrain-max-slope">Slope cap</label></td>
+              <td>
+                <div class="terrain-control">
+                  <input id="terrain-max-slope" type="range" min="20" max="80" step="1" value="80" />
+                  <output id="terrain-max-slope-value" for="terrain-max-slope">80 deg</output>
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <td><label for="terrain-roughness">Roughness</label></td>
+              <td>
+                <div class="terrain-control">
+                  <input id="terrain-roughness" type="range" min="25" max="140" step="5" value="100" />
+                  <output id="terrain-roughness-value" for="terrain-roughness">100%</output>
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <td><label for="terrain-recovery">Height recovery</label></td>
+              <td>
+                <div class="terrain-control">
+                  <input id="terrain-recovery" type="range" min="25" max="180" step="5" value="100" />
+                  <output id="terrain-recovery-value" for="terrain-recovery">100%</output>
+                </div>
+              </td>
+            </tr>
+          </table>
+        </section>
+
         <section class="surface settings-surface">
           <div class="panel-heading compact">
             <div>
               <p class="section-kicker">Evolution</p>
-              <h2>Lab Settings</h2>
+              <h2>Evolution Lab</h2>
             </div>
           </div>
+
+          <div id="generation-summary" class="metric-grid compact-grid"></div>
+          <div id="evolution-metrics" class="metric-grid compact-grid"></div>
 
           <table class="settings-table">
             <tr>
@@ -194,15 +290,6 @@
                   <option value="0.5">50%</option>
                   <option value="0.75">75%</option>
                   <option value="1.0" selected="selected">100%</option>
-                </select>
-              </td>
-            </tr>
-            <tr>
-              <td><label for="floor">Floor</label></td>
-              <td>
-                <select id="floor">
-                  <option value="0">Fixed</option>
-                  <option value="1" selected="selected">Mutable</option>
                 </select>
               </td>
             </tr>
@@ -249,72 +336,6 @@
                   <option value="19">19</option>
                   <option value="20">20</option>
                 </select>
-              </td>
-            </tr>
-          </table>
-        </section>
-
-        <section class="surface terrain-surface">
-          <div class="panel-heading compact">
-            <div>
-              <p class="section-kicker">Terrain</p>
-              <h2>Track Builder</h2>
-            </div>
-          </div>
-
-          <table class="settings-table terrain-table">
-            <tr>
-              <td><label for="terrain-length">Course length</label></td>
-              <td>
-                <div class="terrain-control">
-                  <input id="terrain-length" type="range" min="120" max="1024" step="8" value="1024" />
-                  <output id="terrain-length-value" for="terrain-length">1024 tiles</output>
-                </div>
-              </td>
-            </tr>
-            <tr>
-              <td><label for="terrain-max-slope">Max slope</label></td>
-              <td>
-                <div class="terrain-control">
-                  <input id="terrain-max-slope" type="range" min="20" max="80" step="1" value="80" />
-                  <output id="terrain-max-slope-value" for="terrain-max-slope">80 deg</output>
-                </div>
-              </td>
-            </tr>
-            <tr>
-              <td><label for="terrain-slope-change">Slope change</label></td>
-              <td>
-                <div class="terrain-control">
-                  <input id="terrain-slope-change" type="range" min="2" max="30" step="0.5" value="30" />
-                  <output id="terrain-slope-change-value" for="terrain-slope-change">30 deg</output>
-                </div>
-              </td>
-            </tr>
-            <tr>
-              <td><label for="terrain-roughness">Roughness</label></td>
-              <td>
-                <div class="terrain-control">
-                  <input id="terrain-roughness" type="range" min="0" max="25" step="0.5" value="25" />
-                  <output id="terrain-roughness-value" for="terrain-roughness">25</output>
-                </div>
-              </td>
-            </tr>
-            <tr>
-              <td><label for="terrain-hill-length">Hill length</label></td>
-              <td>
-                <div class="terrain-control">
-                  <input id="terrain-hill-length" type="range" min="3" max="64" step="1" value="7" />
-                  <output id="terrain-hill-length-value" for="terrain-hill-length">7 tiles</output>
-                </div>
-              </td>
-            </tr>
-            <tr>
-              <td><label for="terrain-recovery">Height recovery</label></td>
-              <td>
-                <div class="terrain-control">
-                  <input id="terrain-recovery" type="range" min="0" max="25" step="0.2" value="3.2" />
-                  <output id="terrain-recovery-value" for="terrain-recovery">3.2</output>
-                </div>
               </td>
             </tr>
           </table>
@@ -368,6 +389,12 @@
   <script src="lib/seedrandom.js"></script>
   <script src="lib/box2d-v3/Box2D_v3.1.1.js"></script>
   <script src="lib/box2d-v3/box2d.v3.js"></script>
+  <script src="src/terrain.js"></script>
+  <script src="src/scoring.js"></script>
+  <script src="src/genetics.js"></script>
+  <script src="src/render.js"></script>
+  <script src="src/simulation.js"></script>
+  <script src="src/ui.js"></script>
   <script src="src/app.js"></script>
 </body>
 

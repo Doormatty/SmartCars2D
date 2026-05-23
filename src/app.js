@@ -66,6 +66,15 @@
   const TWO_PI = 2 * Math.PI;
   const DEG_TO_RAD = Math.PI / 180;
   const RAD_TO_DEG = 180 / Math.PI;
+  const terrainCore = window.SmartCarsTerrain;
+  const scoringCore = window.SmartCarsScoring;
+  const geneticsCore = window.SmartCarsGenetics;
+  const renderCore = window.SmartCarsRender;
+  const simulationCore = window.SmartCarsSimulation;
+  const uiCore = window.SmartCarsUI;
+  if (!terrainCore || !scoringCore || !geneticsCore || !renderCore || !simulationCore || !uiCore) {
+    throw new Error("SmartCars core modules failed to load");
+  }
 
   const TERRAIN_DEFAULTS = Object.freeze({
     startFlatTiles: 3,
@@ -641,12 +650,20 @@
 
     function worldDef() {
       let box2dfps = 60;
+      let courseConfig = terrainCore.normalizeCourseConfig({
+        seed: "abc",
+        tileCount: 1024,
+        tileDimensions: { x: 1.5, y: 0.15 },
+        preset: "grand_tour",
+        mutable: true,
+      });
       return {
         gravity: { y: 0 }, doSleep: true, floorseed: "abc",
         maxFloorTiles: 1024, mutable_floor: true, motorSpeed: 20,
         box2dfps: box2dfps, max_idle_timer: box2dfps * 10,
         tileDimensions: { width: 1.5, height: 0.15 },
-        terrain: normalizeTerrainParameters()
+        terrain: normalizeTerrainParameters(),
+        courseConfig: courseConfig
       };
     }
     function getCarConstants() { return carConstants; }
@@ -904,73 +921,24 @@
   };
 
   function getInitialState(world_def) {
-    return {
-      frames: 0,
-      idle_timer: world_def.max_idle_timer,
-      maxPositiony: 0,
-      minPositiony: 0,
-      maxPositionx: 0,
-    };
+    return scoringCore.getInitialState(world_def);
   }
 
   function updateState(constants, worldConstruct, state) {
-    if (state.idle_timer <= 0) {
-      throw new Error("Already Dead");
-    }
-    if (state.maxPositionx > constants.finishLine) {
-      throw new Error("already Finished");
-    }
-
-    // The idle timer resets on forward progress and drains while stalled.
     let position = getBodyPosition(worldConstruct.chassis);
-    // check if car reached end of the path
-    let nextState = {
-      frames: state.frames + 1,
-      maxPositionx: position.x > state.maxPositionx ? position.x : state.maxPositionx,
-      maxPositiony: position.y > state.maxPositiony ? position.y : state.maxPositiony,
-      minPositiony: position.y < state.minPositiony ? position.y : state.minPositiony
-    };
-
-    if (position.x > constants.finishLine) {
-      nextState.idle_timer = state.idle_timer;
-      return nextState;
-    }
-
-    if (position.x > state.maxPositionx + 0.02) {
-      nextState.idle_timer = constants.max_idle_timer;
-      return nextState;
-    }
-    nextState.idle_timer = state.idle_timer - 1;
-    if (Math.abs(getBodyVelocity(worldConstruct.chassis).x) < 0.001) {
-      nextState.idle_timer -= 5;
-    }
-    return nextState;
+    let velocity = getBodyVelocity(worldConstruct.chassis);
+    return scoringCore.updateState(constants, {
+      position: position,
+      velocity: velocity,
+    }, state);
   }
 
   function getStatus(state, constants) {
-    if (hasFailed(state, constants)) return -1;
-    if (hasSuccess(state, constants)) return 1;
-    return 0;
-  }
-
-  function hasFailed(state /*, constants */) {
-    return state.idle_timer <= 0;
-  }
-  function hasSuccess(state, constants) {
-    return state.maxPositionx > constants.finishLine;
+    return scoringCore.getStatus(state, constants);
   }
 
   function calculateScore(state, constants) {
-    let avgspeed = (state.maxPositionx / state.frames) * constants.box2dfps;
-    let position = state.maxPositionx;
-    let score = position + avgspeed;
-    return {
-      v: score,
-      s: avgspeed,
-      x: position,
-      y: state.maxPositiony,
-      y2: state.minPositiony
-    }
+    return scoringCore.calculateScore(state, constants);
   }
 
 
@@ -1643,12 +1611,11 @@
   }
 
   function getFloorFrictionColor(friction) {
-    let terrain = world_def && world_def.terrain ? world_def.terrain : TERRAIN_DEFAULTS;
-    let range = Math.max(terrain.frictionMax - terrain.frictionMin, 0.01);
-    let t = clamp((friction - terrain.frictionMin) / range, 0, 1);
-    let shade = Math.round(150 - (t * 48));
-    let green = Math.round(164 - (t * 24));
-    return "rgb(" + shade + "," + green + ",150)";
+    let course = currentRunner && currentRunner.scene ? currentRunner.scene.course : null;
+    return renderCore.getFloorFrictionColor(
+      friction,
+      course ? course.frictionRange : { min: TERRAIN_DEFAULTS.frictionMin, max: TERRAIN_DEFAULTS.frictionMax }
+    );
   }
 
 
@@ -1691,6 +1658,7 @@
 
   function cw_storeGraphScores(lastState, cw_carScores, generationSize, schema) {
     let diversity = cw_measureScoreDiversity(schema, cw_carScores);
+    let summary = scoringCore.summarizeGeneration(cw_carScores, world_def.course, diversity);
     return {
       cw_topScores: (lastState.cw_topScores || [])
         .concat([cw_carScores[0].score]),
@@ -1706,6 +1674,9 @@
       cw_diversityStats: (lastState.cw_diversityStats || []).concat([
         diversity
       ]),
+      cw_generationSummaries: (lastState.cw_generationSummaries || []).concat([
+        summary
+      ]),
     }
   }
 
@@ -1714,7 +1685,7 @@
     for (let i = 0; i < scores.length; i++) {
       generation[i] = scores[i].def;
     }
-    return measureGenomeDiversity(schema, generation);
+    return geneticsCore.measureGenomeDiversity(schema, generation);
   }
 
   function cw_getGraphScale(state, graphwidth, graphheight) {
@@ -2099,40 +2070,47 @@
       gravity: world_def.gravity,
     });
     b2.enableWorldSleeping(world, world_def.doSleep);
-    let floorTiles = cw_createFloor(
-      world,
-      world_def.floorseed,
-      world_def.tileDimensions,
-      world_def.maxFloorTiles,
-      world_def.terrain
-    );
-
-    let last_tile = floorTiles[
-      floorTiles.length - 1
-    ];
-    let tile_position = last_tile.worldVertices[3];
-    let finishLine = tile_position.x + 5;
+    let course = terrainCore.createCourse(getResolvedCourseConfig(world_def));
+    let floorTiles = cw_createFloor(world, course.tiles);
+    course.tiles = floorTiles;
+    let finishLine = course.finishLine;
     return {
       world: world,
+      course: course,
       floorTiles: floorTiles,
       finishLine: finishLine
     };
   }
 
-  function cw_createFloor(world, floorseed, dimensions, maxFloorTiles, terrainParameters) {
-    let last_tile = null;
-    let tile_position = vec2(-5, 0);
+  function getResolvedCourseConfig(world_def) {
+    let config = terrainCore.normalizeCourseConfig(world_def.courseConfig || {
+      seed: world_def.floorseed,
+      tileCount: world_def.maxFloorTiles,
+      tileDimensions: world_def.tileDimensions,
+      mutable: world_def.mutable_floor,
+      terrain: world_def.terrain,
+    });
+    world_def.courseConfig = config;
+    world_def.floorseed = config.seed;
+    world_def.maxFloorTiles = config.tileCount;
+    world_def.tileDimensions = vec2(config.tileDimensions.x, config.tileDimensions.y);
+    world_def.mutable_floor = config.mutable;
+    return config;
+  }
+
+  function setWorldCourseSeed(seed, targetWorldDef) {
+    targetWorldDef.floorseed = seed;
+    targetWorldDef.courseConfig = terrainCore.normalizeCourseConfig(Object.assign(
+      {},
+      targetWorldDef.courseConfig || {},
+      { seed: seed }
+    ));
+  }
+
+  function cw_createFloor(world, courseTiles) {
     let cw_floorTiles = [];
-    Math.seedrandom(floorseed);
-    let terrain = cw_createTerrainState(terrainParameters);
-    for (let k = 0; k < maxFloorTiles; k++) {
-      let angle = cw_nextFloorAngle(terrain, k, maxFloorTiles, tile_position.y);
-      let friction = cw_nextFloorFriction(terrain, k, maxFloorTiles);
-      last_tile = cw_createFloorTile(
-        world, dimensions, tile_position, angle, friction
-      );
-      cw_floorTiles.push(last_tile);
-      tile_position = cloneVec2(last_tile.worldVertices[3]);
+    for (let k = 0; k < courseTiles.length; k++) {
+      cw_floorTiles.push(cw_createFloorTile(world, courseTiles[k]));
     }
     return cw_floorTiles;
   }
@@ -2203,42 +2181,23 @@
     return terrain.frictionMin + (terrain.frictionMax - terrain.frictionMin) * blend;
   }
 
-  function cw_createFloorTile(world, dim, position, angle, friction) {
+  function cw_createFloorTile(world, courseTile) {
+    let position = cloneVec2(courseTile.worldVertices[0]);
     let body = b2.createBody(world, {
       position: position,
     });
 
-    let coords = [
-      vec2(0, 0),
-      vec2(0, -dim.y),
-      vec2(dim.x, -dim.y),
-      vec2(dim.x, 0)
-    ];
-
-    let center = vec2(0, 0);
-
-    let newcoords = cw_rotateFloorTile(coords, center, angle);
-
     let shape = b2.createPolygonShape(body, {
-      vertices: newcoords,
+      vertices: courseTile.vertices,
       density: 0,
-      friction: friction,
+      friction: courseTile.friction,
     });
-    let transform = {
-      position: cloneVec2(position),
-      angle: 0,
-    };
-    let worldVertices = new Array(newcoords.length);
-    for (let i = 0; i < newcoords.length; i++) {
-      worldVertices[i] = transformPoint(transform, newcoords[i]);
-    }
-    return {
+    return Object.assign({}, courseTile, {
       body: body,
       shape: shape,
-      vertices: newcoords,
-      worldVertices: worldVertices,
-      friction: friction,
-    };
+      vertices: courseTile.vertices,
+      worldVertices: courseTile.worldVertices,
+    });
   }
 
   function cw_rotateFloorTile(coords, center, angle) {
@@ -2294,12 +2253,15 @@
   function worldRun(world_def, defs, listeners) {
     if (world_def.mutable_floor) {
       // GHOST DISABLED
-      world_def.floorseed = btoa(Math.seedrandom());
+      setWorldCourseSeed(btoa(Math.seedrandom()), world_def);
     }
 
     let normalizedDefs = normalizeGeneration(world_def.schema, defs);
     let scene = setupScene(world_def);
     world_def.finishLine = scene.finishLine;
+    world_def.course = scene.course;
+    world_def.courseStartX = scene.course.startX;
+    world_def.courseProgress = terrainCore.getProgress;
     let destroyed = false;
     b2.step(scene.world, 1 / world_def.box2dfps, 4);
     let cars = new Array(normalizedDefs.length);
@@ -2455,14 +2417,24 @@
     ghost: "cw_ghost",
     topScores: "cw_topScores",
     diversityStats: "cw_diversityStats",
+    generationSummaries: "cw_generationSummaries",
     floorSeed: "cw_floorSeed",
     terrainSettings: "cw_terrainSettings",
   };
 
   const distanceMeter = requireElementById("distancemeter");
   const heightMeter = requireElementById("heightmeter");
+  const courseProgressMeter = document.getElementById("course-progress-meter");
+  const courseSectionMeter = document.getElementById("course-section-meter");
+  const leaderMeter = document.getElementById("leader-meter");
+  const courseSummaryElem = document.getElementById("course-summary");
+  const courseSectionListElem = document.getElementById("course-section-list");
+  const generationSummaryElem = document.getElementById("generation-summary");
+  const evolutionMetricsElem = document.getElementById("evolution-metrics");
   let lastDistanceDisplay = null;
   let lastHeightDisplay = null;
+  let lastCourseProgressDisplay = null;
+  let lastCourseSectionDisplay = null;
   let lastMinimapCameraLeft = null;
   let lastMinimapCameraTop = null;
   let lastParentageSignature = null;
@@ -2488,66 +2460,76 @@
     maxFloorTiles: 1024,
     mutable_floor: true,
     terrain: normalizeTerrainParameters(),
+    courseConfig: terrainCore.normalizeCourseConfig({
+      seed: btoa(Math.seedrandom()),
+      tileCount: 1024,
+      tileDimensions: vec2(1.5, 0.15),
+      preset: "grand_tour",
+      mutable: true,
+      difficultyRamp: 1,
+    }),
     box2dfps: box2dfps,
+    max_run_frames: box2dfps * 75,
     motorSpeed: 20,
     max_idle_timer: max_idle_timer,
     schema: generationConfig.constants.schema
   }
 
+  const COURSE_TUNING_DEFAULTS = {
+    preset: "grand_tour",
+    tileCount: 1024,
+    difficultyRamp: 1,
+    maxSlope: 80,
+    roughness: 100,
+    recovery: 100,
+  };
+  let courseTuning = Object.assign({}, COURSE_TUNING_DEFAULTS);
+
   const terrainControls = [
     {
       inputId: "terrain-length",
       outputId: "terrain-length-value",
-      getValue() { return world_def.maxFloorTiles; },
+      getValue() { return courseTuning.tileCount; },
       setValue(value) {
-        world_def.maxFloorTiles = clamp(parseFiniteInteger(value, world_def.maxFloorTiles), 120, 1024);
+        courseTuning.tileCount = clamp(parseFiniteInteger(value, courseTuning.tileCount), 120, 1024);
       },
       format(value) { return Math.round(value) + " tiles"; },
+    },
+    {
+      inputId: "course-difficulty",
+      outputId: "course-difficulty-value",
+      getValue() { return roundToTenth(courseTuning.difficultyRamp * 100); },
+      setValue(value) {
+        courseTuning.difficultyRamp = clamp(parseFiniteFloat(value, courseTuning.difficultyRamp * 100), 50, 180) / 100;
+      },
+      format(value) { return Math.round(value) + "%"; },
     },
     {
       inputId: "terrain-max-slope",
       outputId: "terrain-max-slope-value",
-      getValue() { return Math.round(world_def.terrain.maxAngle * RAD_TO_DEG); },
+      getValue() { return Math.round(courseTuning.maxSlope); },
       setValue(value) {
-        world_def.terrain.maxAngle = clamp(parseFiniteFloat(value, world_def.terrain.maxAngle * RAD_TO_DEG), 20, 80) * DEG_TO_RAD;
+        courseTuning.maxSlope = clamp(parseFiniteFloat(value, courseTuning.maxSlope), 20, 80);
       },
       format(value) { return Math.round(value) + " deg"; },
     },
     {
-      inputId: "terrain-slope-change",
-      outputId: "terrain-slope-change-value",
-      getValue() { return roundToTenth(world_def.terrain.maxAngleStep * RAD_TO_DEG); },
-      setValue(value) {
-        world_def.terrain.maxAngleStep = clamp(parseFiniteFloat(value, world_def.terrain.maxAngleStep * RAD_TO_DEG), 2, 30) * DEG_TO_RAD;
-      },
-      format(value) { return formatTenth(value) + " deg"; },
-    },
-    {
       inputId: "terrain-roughness",
       outputId: "terrain-roughness-value",
-      getValue() { return roundToTenth(world_def.terrain.noise * 100); },
+      getValue() { return Math.round(courseTuning.roughness); },
       setValue(value) {
-        world_def.terrain.noise = clamp(parseFiniteFloat(value, world_def.terrain.noise * 100), 0, 25) / 100;
+        courseTuning.roughness = clamp(parseFiniteFloat(value, courseTuning.roughness), 25, 140);
       },
-      format(value) { return formatTenth(value); },
-    },
-    {
-      inputId: "terrain-hill-length",
-      outputId: "terrain-hill-length-value",
-      getValue() { return world_def.terrain.targetMaxTiles; },
-      setValue(value) {
-        world_def.terrain.targetMaxTiles = clamp(parseFiniteInteger(value, world_def.terrain.targetMaxTiles), 3, 64);
-      },
-      format(value) { return Math.round(value) + " tiles"; },
+      format(value) { return Math.round(value) + "%"; },
     },
     {
       inputId: "terrain-recovery",
       outputId: "terrain-recovery-value",
-      getValue() { return roundToTenth(world_def.terrain.heightBias * 100); },
+      getValue() { return Math.round(courseTuning.recovery); },
       setValue(value) {
-        world_def.terrain.heightBias = clamp(parseFiniteFloat(value, world_def.terrain.heightBias * 100), 0, 25) / 100;
+        courseTuning.recovery = clamp(parseFiniteFloat(value, courseTuning.recovery), 25, 180);
       },
-      format(value) { return formatTenth(value); },
+      format(value) { return Math.round(value) + "%"; },
     },
   ];
 
@@ -2558,6 +2540,7 @@
     cw_graphElite: [],
     cw_graphTop: [],
     cw_diversityStats: [],
+    cw_generationSummaries: [],
   };
 
   function resetGraphState() {
@@ -2567,6 +2550,7 @@
       cw_graphElite: [],
       cw_graphTop: [],
       cw_diversityStats: [],
+      cw_generationSummaries: [],
     };
   }
 
@@ -2581,8 +2565,9 @@
 
   function getTerrainSettingsSnapshot() {
     return {
-      maxFloorTiles: world_def.maxFloorTiles,
-      terrain: normalizeTerrainParameters(world_def.terrain),
+      version: 2,
+      courseConfig: terrainCore.normalizeCourseConfig(world_def.courseConfig),
+      courseTuning: Object.assign({}, courseTuning),
     };
   }
 
@@ -2590,23 +2575,22 @@
     if (!settings || typeof settings !== "object") {
       return;
     }
-    world_def.maxFloorTiles = clamp(
-      parseFiniteInteger(settings.maxFloorTiles, world_def.maxFloorTiles),
-      120,
-      1024
-    );
-    world_def.terrain = normalizeTerrainParameters(settings.terrain);
+    if (settings.courseConfig) {
+      world_def.courseConfig = terrainCore.normalizeCourseConfig(settings.courseConfig);
+      courseTuning = Object.assign({}, COURSE_TUNING_DEFAULTS, settings.courseTuning || {});
+    } else {
+      world_def.courseConfig = terrainCore.normalizeCourseConfig(terrainCore.migrateTerrainSettings(settings));
+      syncCourseTuningFromConfig(world_def.courseConfig);
+    }
+    applyCourseConfigMirrors();
     syncTerrainControlsFromWorld();
   }
 
   function getFloorSignature() {
-    return JSON.stringify({
-      seed: world_def.floorseed,
-      maxFloorTiles: world_def.maxFloorTiles,
-      tileWidth: world_def.tileDimensions.x,
-      tileHeight: world_def.tileDimensions.y,
-      terrain: normalizeTerrainParameters(world_def.terrain),
-    });
+    if (currentRunner && currentRunner.scene && currentRunner.scene.course) {
+      return currentRunner.scene.course.signature;
+    }
+    return terrainCore.createCourse(world_def.courseConfig).signature;
   }
 
   function renderTerrainControl(control) {
@@ -2618,31 +2602,127 @@
   }
 
   function syncTerrainControlsFromWorld() {
-    world_def.terrain = normalizeTerrainParameters(world_def.terrain);
+    rebuildCourseConfigFromTuning();
+    let presetInput = document.getElementById("course-preset");
+    if (presetInput) {
+      presetInput.value = courseTuning.preset;
+    }
     for (let i = 0; i < terrainControls.length; i++) {
       renderTerrainControl(terrainControls[i]);
     }
   }
 
   function applyTerrainControlsToWorld() {
+    let presetInput = document.getElementById("course-preset");
+    if (presetInput) {
+      courseTuning.preset = presetInput.value;
+    }
     for (let i = 0; i < terrainControls.length; i++) {
       let control = terrainControls[i];
       control.setValue(requireElementById(control.inputId).value);
     }
-    world_def.terrain = normalizeTerrainParameters(world_def.terrain);
+    rebuildCourseConfigFromTuning();
     syncTerrainControlsFromWorld();
   }
 
   function bindTerrainControls() {
+    let presetInput = document.getElementById("course-preset");
+    if (presetInput) {
+      presetInput.addEventListener("change", function () {
+        courseTuning.preset = this.value;
+        rebuildCourseConfigFromTuning();
+        syncTerrainControlsFromWorld();
+      });
+    }
     for (let i = 0; i < terrainControls.length; i++) {
       let control = terrainControls[i];
       requireElementById(control.inputId).addEventListener("input", function () {
         control.setValue(this.value);
-        world_def.terrain = normalizeTerrainParameters(world_def.terrain);
+        rebuildCourseConfigFromTuning();
         renderTerrainControl(control);
       });
     }
     syncTerrainControlsFromWorld();
+  }
+
+  function rebuildCourseConfigFromTuning() {
+    let baseConfig = terrainCore.normalizeCourseConfig({
+      seed: world_def.floorseed,
+      tileCount: courseTuning.tileCount,
+      tileDimensions: world_def.tileDimensions,
+      preset: courseTuning.preset,
+      mutable: world_def.mutable_floor,
+      difficultyRamp: courseTuning.difficultyRamp,
+    });
+    let maxSlope = Math.max(getMaxSectionSlope(baseConfig.sections), 1);
+    let slopeScale = courseTuning.maxSlope / maxSlope;
+    let roughnessScale = courseTuning.roughness / 100;
+    let recoveryScale = courseTuning.recovery / 100;
+    let tunedSections = baseConfig.sections.map(function (section) {
+      return {
+        id: section.id,
+        name: section.name,
+        lengthWeight: section.lengthWeight,
+        slope: {
+          min: clamp(section.slope.min * slopeScale, -80, 80),
+          max: clamp(section.slope.max * slopeScale, -80, 80),
+          bias: clamp(section.slope.bias * slopeScale, -80, 80),
+        },
+        roughness: clamp(section.roughness * roughnessScale, 0, 1),
+        heightBias: clamp(section.heightBias * recoveryScale, 0, 0.25),
+        friction: Object.assign({}, section.friction),
+        difficulty: section.difficulty,
+      };
+    });
+    world_def.courseConfig = terrainCore.normalizeCourseConfig(Object.assign({}, baseConfig, {
+      sections: tunedSections,
+    }));
+    applyCourseConfigMirrors();
+  }
+
+  function syncCourseTuningFromConfig(config) {
+    let normalized = terrainCore.normalizeCourseConfig(config || world_def.courseConfig);
+    courseTuning.preset = terrainCore.COURSE_PRESETS[normalized.preset] ? normalized.preset : COURSE_TUNING_DEFAULTS.preset;
+    courseTuning.tileCount = normalized.tileCount;
+    courseTuning.difficultyRamp = normalized.difficultyRamp;
+    courseTuning.maxSlope = Math.round(getMaxSectionSlope(normalized.sections));
+    courseTuning.roughness = Math.round(getAverageSectionValue(normalized.sections, "roughness") / Math.max(getAverageSectionValue(terrainCore.COURSE_PRESETS[courseTuning.preset].sections, "roughness"), 0.01) * 100);
+    courseTuning.recovery = Math.round(getAverageSectionValue(normalized.sections, "heightBias") / Math.max(getAverageSectionValue(terrainCore.COURSE_PRESETS[courseTuning.preset].sections, "heightBias"), 0.01) * 100);
+    courseTuning.roughness = clamp(courseTuning.roughness, 25, 140);
+    courseTuning.recovery = clamp(courseTuning.recovery, 25, 180);
+  }
+
+  function applyCourseConfigMirrors() {
+    let config = terrainCore.normalizeCourseConfig(world_def.courseConfig);
+    world_def.courseConfig = config;
+    world_def.floorseed = config.seed;
+    world_def.maxFloorTiles = config.tileCount;
+    world_def.tileDimensions = vec2(config.tileDimensions.x, config.tileDimensions.y);
+    world_def.mutable_floor = config.mutable;
+  }
+
+  function getMaxSectionSlope(sections) {
+    let maxSlope = 0;
+    for (let i = 0; i < sections.length; i++) {
+      maxSlope = Math.max(
+        maxSlope,
+        Math.abs(sections[i].slope.min),
+        Math.abs(sections[i].slope.max),
+        Math.abs(sections[i].slope.bias)
+      );
+    }
+    return maxSlope;
+  }
+
+  function getAverageSectionValue(sections, key) {
+    if (!Array.isArray(sections) || sections.length === 0) {
+      return 0;
+    }
+    let sum = 0;
+    for (let i = 0; i < sections.length; i++) {
+      sum += Number.isFinite(sections[i][key]) ? sections[i][key] : 0;
+    }
+    return sum / sections.length;
   }
 
 
@@ -2672,6 +2752,24 @@
     if (height !== lastHeightDisplay) {
       heightMeter.textContent = height + " meters";
       lastHeightDisplay = height;
+    }
+    let progress = currentRunner && currentRunner.scene
+      ? terrainCore.getProgress(currentRunner.scene.course, leaderPosition.x)
+      : null;
+    if (progress) {
+      let progressText = uiCore.formatPercent(progress.completion);
+      let sectionText = progress.sectionName + " " + uiCore.formatPercent(progress.sectionProgress);
+      if (courseProgressMeter && progressText !== lastCourseProgressDisplay) {
+        courseProgressMeter.textContent = progressText;
+        lastCourseProgressDisplay = progressText;
+      }
+      if (courseSectionMeter && sectionText !== lastCourseSectionDisplay) {
+        courseSectionMeter.textContent = sectionText;
+        lastCourseSectionDisplay = sectionText;
+      }
+      if (leaderMeter && Number.isInteger(leaderPosition.leader)) {
+        leaderMeter.textContent = "Car " + leaderPosition.leader;
+      }
     }
     if (distance > minimapfogdistance) {
       fogdistance.width = Math.max(0, minimapPixelWidth - Math.round(distance + 15) * minimapscale) + "px";
@@ -3000,6 +3098,12 @@
     let chassisDensity = calculateChassisDensityWithDrivetrainCost(typedDef);
     let baseDensity = typedDef.chassis_density[0];
     let drivetrainDensityCost = chassisDensity - baseDensity;
+    let telemetry = simulationCore.deriveVehicleTelemetry(
+      typedDef,
+      carInstance,
+      world_def,
+      readBodyMass
+    );
 
     appendSelectedCarFact("Focus", focusLabel + " " + formatCarLabel(carInfo.index));
     appendSelectedCarFact("Status", describeCarStatus(carInfo, cwCar));
@@ -3008,6 +3112,7 @@
     appendSelectedCarFact("Idle reserve", formatDetailPercent(idleRatio));
     appendSelectedCarFact("Score", score ? formatDetailNumber(score.v, 2) : "--");
     appendSelectedCarFact("Distance", score ? formatDetailNumber(score.x, 2) + " m" : "--");
+    appendSelectedCarFact("Course", score ? formatDetailPercent(score.completion) : "--");
     appendSelectedCarFact("ID", formatShortId(carInfo.def && carInfo.def.id));
 
     let chassisRows = [
@@ -3025,7 +3130,18 @@
       ["Power", formatDetailNumber(typedDef.motor_power[0], 2)],
       ["Gearing", formatDetailNumber(typedDef.motor_gearing[0], 2)],
       ["Density cost", formatDetailNumber(drivetrainDensityCost, 2)],
-      ["Base motor", formatDetailNumber(world_def.motorSpeed, 2)]
+      ["Base motor", formatDetailNumber(world_def.motorSpeed, 2)],
+      ["Power / mass", formatDetailNumber(telemetry.powerToWeight, 4)],
+      ["Effective torque", formatDetailNumber(telemetry.effectiveMotorTorque, 2)]
+    ], false));
+
+    selectedCarComponentsElem.appendChild(createComponentCard("Derived Telemetry", [
+      ["Total mass", formatDetailNumber(telemetry.mass, 2)],
+      ["Wheel mass", formatDetailNumber(telemetry.wheelMass, 2)],
+      ["Wheel friction avg", formatDetailNumber(telemetry.wheelFrictionAverage, 2)],
+      ["Suspension travel avg", formatDetailNumber(telemetry.suspensionTravelAverage, 2)],
+      ["Suspension stiffness avg", formatDetailNumber(telemetry.suspensionStiffnessAverage, 2) + " Hz"],
+      ["Suspension damping avg", formatDetailNumber(telemetry.suspensionDampingAverage, 2)]
     ], false));
 
     for (let i = 0; i < carInstance.wheels.length; i++) {
@@ -3119,12 +3235,12 @@
 
   function resetCarUI() {
     resetRunTracking();
+    generationMeter.textContent = generationState.counter.toString();
+    populationMeter.textContent = generationConfig.constants.generationSize.toString();
     if (!shouldUpdateLivePanels()) {
       return;
     }
-    generationMeter.textContent = generationState.counter.toString();
     carsElem.textContent = "";
-    populationMeter.textContent = generationConfig.constants.generationSize.toString();
     renderParentagePanel();
     renderSelectedCarPanel(true);
   }
@@ -3317,7 +3433,15 @@
       fogdistance.width = Math.max(0, minimapPixelWidth - 2) + "px";
     }
     minimapctx.clearRect(0, 0, minimapcanvas.width, minimapcanvas.height);
-    minimapctx.strokeStyle = "#2563eb";
+    let sectionRects = renderCore.getSectionRects(currentRunner.scene.course, minimapscale, 35, minimapcanvas.height);
+    for (let i = 0; i < sectionRects.length; i++) {
+      minimapctx.globalAlpha = 0.16;
+      minimapctx.fillStyle = sectionRects[i].color;
+      minimapctx.fillRect(sectionRects[i].x, 0, sectionRects[i].width, sectionRects[i].height);
+    }
+    minimapctx.globalAlpha = 1;
+    minimapctx.strokeStyle = "#214e6f";
+    minimapctx.lineWidth = 2;
     minimapctx.beginPath();
     minimapctx.moveTo(0, 35 * minimapscale);
     for (let k = 0; k < floorTiles.length; k++) {
@@ -3326,6 +3450,7 @@
       minimapctx.lineTo((tile_position.x + 5) * minimapscale, (-tile_position.y + 35) * minimapscale);
     }
     minimapctx.stroke();
+    renderCoursePanel();
   }
 
   function cw_sizeMiniMap(floorTiles) {
@@ -3522,6 +3647,8 @@
     populationMeter.textContent = carMap.size.toString();
     lastDistanceDisplay = null;
     lastHeightDisplay = null;
+    lastCourseProgressDisplay = null;
+    lastCourseSectionDisplay = null;
     showDistance(
       Math.round(leaderPosition.x * 100) / 100,
       Math.round(leaderPosition.y * 100) / 100
@@ -3539,7 +3666,84 @@
     }
     cw_findLeader();
     cw_drawMiniMap();
+    renderCoursePanel();
+    renderGenerationSummaryPanel();
     refreshLivePanels();
+  }
+
+  function renderCoursePanel() {
+    if (!courseSummaryElem || !courseSectionListElem || !currentRunner || !currentRunner.scene) {
+      return;
+    }
+    let course = currentRunner.scene.course;
+    let summary = uiCore.summarizeCourse(course);
+    courseSummaryElem.textContent = "";
+    appendMetricFact(courseSummaryElem, "Preset", summary.label);
+    appendMetricFact(courseSummaryElem, "Finish", summary.distance);
+    appendMetricFact(courseSummaryElem, "Elevation", summary.elevation);
+    appendMetricFact(courseSummaryElem, "Friction", summary.friction);
+
+    courseSectionListElem.textContent = "";
+    for (let i = 0; i < course.sections.length; i++) {
+      let section = course.sections[i];
+      let item = document.createElement("li");
+      let marker = document.createElement("span");
+      let label = document.createElement("strong");
+      let meta = document.createElement("span");
+      item.className = "course-section-item";
+      marker.className = "course-section-marker";
+      marker.style.backgroundColor = renderCore.getSectionColor(section, i);
+      label.textContent = section.name;
+      meta.textContent = uiCore.formatDistance(section.endX - section.startX) + " / difficulty " + uiCore.formatPercent(section.difficulty);
+      item.appendChild(marker);
+      item.appendChild(label);
+      item.appendChild(meta);
+      courseSectionListElem.appendChild(item);
+    }
+  }
+
+  function renderGenerationSummaryPanel() {
+    if (!generationSummaryElem || !evolutionMetricsElem) {
+      return;
+    }
+    let summaries = graphState.cw_generationSummaries || [];
+    let diversityStats = graphState.cw_diversityStats || [];
+    let latestSummary = summaries.length > 0 ? summaries[summaries.length - 1] : null;
+    let latestDiversity = diversityStats.length > 0 ? diversityStats[diversityStats.length - 1] : null;
+    generationSummaryElem.textContent = "";
+    evolutionMetricsElem.textContent = "";
+
+    if (!latestSummary) {
+      appendMetricFact(generationSummaryElem, "Finish rate", "--");
+      appendMetricFact(generationSummaryElem, "Best section", "--");
+      appendMetricFact(generationSummaryElem, "Best distance", "--");
+      appendMetricFact(generationSummaryElem, "Average score", "--");
+    } else {
+      appendMetricFact(generationSummaryElem, "Finish rate", uiCore.formatPercent(latestSummary.finishRate));
+      appendMetricFact(generationSummaryElem, "Best section", latestSummary.bestSectionName || "--");
+      appendMetricFact(generationSummaryElem, "Best distance", uiCore.formatDistance(latestSummary.bestDistance));
+      appendMetricFact(generationSummaryElem, "Average score", uiCore.formatNumber(latestSummary.averageScore, 1));
+    }
+
+    let evolution = geneticsCore.describeEvolution(generationConfig.constants, latestSummary, latestDiversity);
+    appendMetricFact(evolutionMetricsElem, "Mutation", uiCore.formatPercent(evolution.mutationRate));
+    appendMetricFact(evolutionMetricsElem, "Mutation size", uiCore.formatPercent(evolution.mutationSize));
+    appendMetricFact(evolutionMetricsElem, "Elite clones", evolution.eliteClones.toString());
+    appendMetricFact(evolutionMetricsElem, "Immigrants", uiCore.formatPercent(evolution.randomImmigrantRate));
+    appendMetricFact(evolutionMetricsElem, "Diversity avg", uiCore.formatPercent(evolution.diversityAverage));
+    appendMetricFact(evolutionMetricsElem, "Diversity nearest", uiCore.formatPercent(evolution.diversityNearest));
+  }
+
+  function appendMetricFact(parent, label, value) {
+    let fact = document.createElement("div");
+    let name = document.createElement("span");
+    let data = document.createElement("strong");
+    fact.className = "metric-fact";
+    name.textContent = label;
+    data.textContent = value;
+    fact.appendChild(name);
+    fact.appendChild(data);
+    parent.appendChild(fact);
   }
 
   function cw_findLeader() {
@@ -3599,6 +3803,7 @@
       graphState,
       results
     );
+    renderGenerationSummaryPanel();
   }
 
   function cw_newRound(results) {
@@ -3618,7 +3823,7 @@
     );
     if (world_def.mutable_floor) {
       ghost = null;
-      world_def.floorseed = btoa(Math.seedrandom());
+      setWorldCourseSeed(btoa(Math.seedrandom()), world_def);
     } else {
       ghost_reset_ghost(ghost);
     }
@@ -3666,13 +3871,14 @@
     lastSelectedCarSignature = null;
     renderParentagePanel();
     renderSelectedCarPanel(true);
+    renderGenerationSummaryPanel();
   }
 
   function cw_resetWorld() {
     doDraw = true;
     applyTerrainControlsToWorld();
     cw_stopSimulation();
-    world_def.floorseed = seedInput.value;
+    setWorldCourseSeed(seedInput.value, world_def);
     cw_clearPopulationWorld();
     destroyCurrentRunner();
     cw_resetPopulationUI();
@@ -3743,6 +3949,7 @@
       localStorage.setItem(STORAGE_KEYS.ghost, JSON.stringify(ghost));
       localStorage.setItem(STORAGE_KEYS.topScores, JSON.stringify(graphState.cw_topScores));
       localStorage.setItem(STORAGE_KEYS.diversityStats, JSON.stringify(graphState.cw_diversityStats));
+      localStorage.setItem(STORAGE_KEYS.generationSummaries, JSON.stringify(graphState.cw_generationSummaries));
       localStorage.setItem(STORAGE_KEYS.floorSeed, world_def.floorseed);
       localStorage.setItem(STORAGE_KEYS.terrainSettings, JSON.stringify(getTerrainSettingsSnapshot()));
     } catch (error) {
@@ -3762,6 +3969,7 @@
     let restoredGhost;
     let restoredTopScores;
     let restoredDiversityStats;
+    let restoredGenerationSummaries;
     let restoredFloorSeed;
     let restoredTerrainSettings;
     try {
@@ -3773,6 +3981,7 @@
       restoredGhost = JSON.parse(localStorage.getItem(STORAGE_KEYS.ghost) || "null");
       restoredTopScores = JSON.parse(localStorage.getItem(STORAGE_KEYS.topScores) || "[]");
       restoredDiversityStats = JSON.parse(localStorage.getItem(STORAGE_KEYS.diversityStats) || "[]");
+      restoredGenerationSummaries = JSON.parse(localStorage.getItem(STORAGE_KEYS.generationSummaries) || "[]");
       if (restoredGhost !== null && typeof restoredGhost !== "object") {
         restoredGhost = null;
       }
@@ -3781,6 +3990,9 @@
       }
       if (!Array.isArray(restoredDiversityStats)) {
         restoredDiversityStats = [];
+      }
+      if (!Array.isArray(restoredGenerationSummaries)) {
+        restoredGenerationSummaries = [];
       }
       restoredFloorSeed = localStorage.getItem(STORAGE_KEYS.floorSeed) || world_def.floorseed;
       restoredTerrainSettings = JSON.parse(localStorage.getItem(STORAGE_KEYS.terrainSettings) || "null");
@@ -3798,7 +4010,8 @@
     ghost = restoredGhost;
     graphState.cw_topScores = restoredTopScores;
     graphState.cw_diversityStats = restoredDiversityStats;
-    world_def.floorseed = restoredFloorSeed;
+    graphState.cw_generationSummaries = restoredGenerationSummaries;
+    setWorldCourseSeed(restoredFloorSeed, world_def);
     seedInput.value = world_def.floorseed;
     applyTerrainSettingsSnapshot(restoredTerrainSettings);
 
@@ -3893,7 +4106,8 @@
     }
     mmm.parentNode.removeChild(mmm);
     idleTimerBarTemplate.parentNode.removeChild(idleTimerBarTemplate);
-    world_def.floorseed = btoa(Math.seedrandom());
+    setWorldCourseSeed(btoa(Math.seedrandom()), world_def);
+    seedInput.value = world_def.floorseed;
     cw_generationZero();
     ghost = ghost_create_ghost();
     resetCarUI();
@@ -3981,6 +4195,11 @@
 
   function cw_setMutableFloor(choice) {
     world_def.mutable_floor = choice === "1";
+    world_def.courseConfig = terrainCore.normalizeCourseConfig(Object.assign(
+      {},
+      world_def.courseConfig,
+      { mutable: world_def.mutable_floor }
+    ));
   }
 
   function cw_setGravity(choice) {
