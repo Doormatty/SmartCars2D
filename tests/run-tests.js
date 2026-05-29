@@ -2,6 +2,7 @@ const assert = require("assert");
 
 const terrain = require("../src/terrain");
 const scoring = require("../src/scoring");
+const simulation = require("../src/simulation");
 
 function testDeterministicCourse() {
   const config = {
@@ -105,6 +106,47 @@ function testLegacyMigration() {
   assert.ok(course.frictionRange.max <= 5);
 }
 
+function testChassisGeometryCostPenalizesLongThinShapes() {
+  const balanced = simulation.measureChassisGeometry(rectangleVertices(2.2, 0.9));
+  const longThin = simulation.measureChassisGeometry(rectangleVertices(3.6, 0.2));
+
+  assert.strictEqual(round(balanced.width), 2.2);
+  assert.strictEqual(round(balanced.height), 0.9);
+  assert.strictEqual(simulation.calculateChassisGeometryCost(balanced), 0);
+  assert.ok(longThin.aspectRatio > 10);
+  assert.ok(longThin.clearanceRisk > 0.7);
+  assert.ok(simulation.calculateChassisGeometryCost(longThin) > 300);
+}
+
+function testChassisGeometryRiskChangesMaterialAndSuspension() {
+  const balanced = simulation.measureChassisGeometry(rectangleVertices(2.2, 0.9));
+  const longThin = simulation.measureChassisGeometry(rectangleVertices(3.6, 0.2));
+  const balancedMaterial = simulation.calculateChassisMaterialProfile(balanced);
+  const riskyMaterial = simulation.calculateChassisMaterialProfile(longThin);
+  const balancedSuspension = simulation.calculateChassisSuspensionProfile(balanced);
+  const riskySuspension = simulation.calculateChassisSuspensionProfile(longThin);
+
+  assert.ok(riskyMaterial.friction > balancedMaterial.friction);
+  assert.ok(riskyMaterial.restitution < balancedMaterial.restitution);
+  assert.ok(riskySuspension.travelMultiplier < balancedSuspension.travelMultiplier);
+  assert.ok(riskySuspension.dampingMultiplier > balancedSuspension.dampingMultiplier);
+}
+
+function rectangleVertices(width, height) {
+  const halfWidth = width / 2;
+  const halfHeight = height / 2;
+  return [
+    { x: halfWidth, y: 0 },
+    { x: halfWidth, y: halfHeight },
+    { x: 0, y: halfHeight },
+    { x: -halfWidth, y: halfHeight },
+    { x: -halfWidth, y: 0 },
+    { x: -halfWidth, y: -halfHeight },
+    { x: 0, y: -halfHeight },
+    { x: halfWidth, y: -halfHeight },
+  ];
+}
+
 function tileFingerprint(tile) {
   return {
     sectionId: tile.sectionId,
@@ -126,6 +168,8 @@ const tests = [
   testNormalizedBounds,
   testFinishedScoringRanksAboveComparableDistance,
   testLegacyMigration,
+  testChassisGeometryCostPenalizesLongThinShapes,
+  testChassisGeometryRiskChangesMaterialAndSuspension,
 ];
 
 for (const test of tests) {

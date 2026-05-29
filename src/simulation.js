@@ -7,6 +7,16 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
   "use strict";
 
+  const CHASSIS_GEOMETRY_LIMITS = Object.freeze({
+    freeAspectRatio: 3.25,
+    severeAspectRatio: 8,
+    minUsefulHeight: 0.55,
+    heightRiskRange: 0.45,
+    aspectDensityScale: 18,
+    heightDensityScale: 650,
+    maxDensityCost: 450,
+  });
+
   function deriveVehicleTelemetry(typedDef, carInstance, constants, readBodyMass) {
     typedDef = typedDef || {};
     constants = constants || {};
@@ -60,6 +70,109 @@
     };
   }
 
+  function measureChassisGeometry(vertexList) {
+    let vertices = Array.isArray(vertexList) ? vertexList : [];
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minY = Infinity;
+    let maxY = -Infinity;
+    let twiceArea = 0;
+    let maxPointDistance = 0;
+
+    for (let i = 0; i < vertices.length; i++) {
+      let point = vertices[i] || {};
+      let x = numberOr(point.x, 0);
+      let y = numberOr(point.y, 0);
+      minX = Math.min(minX, x);
+      maxX = Math.max(maxX, x);
+      minY = Math.min(minY, y);
+      maxY = Math.max(maxY, y);
+      maxPointDistance = Math.max(maxPointDistance, Math.sqrt(x * x + y * y));
+
+      let next = vertices[(i + 1) % vertices.length] || {};
+      let nextX = numberOr(next.x, 0);
+      let nextY = numberOr(next.y, 0);
+      twiceArea += x * nextY - y * nextX;
+    }
+
+    if (vertices.length === 0) {
+      minX = 0;
+      maxX = 0;
+      minY = 0;
+      maxY = 0;
+    }
+
+    let width = Math.max(0, maxX - minX);
+    let height = Math.max(0, maxY - minY);
+    let shortAxis = Math.max(Math.min(width, height), Number.EPSILON);
+    let longAxis = Math.max(width, height);
+    let aspectRatio = longAxis / shortAxis;
+    let thinness = clamp(
+      (aspectRatio - CHASSIS_GEOMETRY_LIMITS.freeAspectRatio) /
+      (CHASSIS_GEOMETRY_LIMITS.severeAspectRatio - CHASSIS_GEOMETRY_LIMITS.freeAspectRatio),
+      0,
+      1
+    );
+    let clearanceRisk = clamp(
+      (CHASSIS_GEOMETRY_LIMITS.minUsefulHeight - height) /
+      CHASSIS_GEOMETRY_LIMITS.heightRiskRange,
+      0,
+      1
+    );
+
+    return {
+      width: width,
+      height: height,
+      area: Math.abs(twiceArea) / 2,
+      aspectRatio: aspectRatio,
+      thinness: thinness,
+      clearanceRisk: clearanceRisk,
+      groundClearanceEstimate: Math.max(0, -minY),
+      mountSpread: longAxis,
+      maxPointDistance: maxPointDistance,
+      bounds: {
+        minX: minX,
+        maxX: maxX,
+        minY: minY,
+        maxY: maxY,
+      },
+    };
+  }
+
+  function calculateChassisGeometryCost(geometry) {
+    geometry = geometry || {};
+    let aspectRatio = numberOr(geometry.aspectRatio, 1);
+    let height = numberOr(geometry.height, CHASSIS_GEOMETRY_LIMITS.minUsefulHeight);
+    let aspectExcess = Math.max(0, aspectRatio - CHASSIS_GEOMETRY_LIMITS.freeAspectRatio);
+    let heightDeficit = Math.max(0, CHASSIS_GEOMETRY_LIMITS.minUsefulHeight - height);
+    let cost = aspectExcess * aspectExcess * CHASSIS_GEOMETRY_LIMITS.aspectDensityScale;
+    cost += heightDeficit * heightDeficit * CHASSIS_GEOMETRY_LIMITS.heightDensityScale;
+    return clamp(cost, 0, CHASSIS_GEOMETRY_LIMITS.maxDensityCost);
+  }
+
+  function calculateChassisMaterialProfile(geometry) {
+    let risk = getChassisGeometryRisk(geometry);
+    return {
+      friction: 10 + risk * 12,
+      restitution: Math.max(0.01, 0.08 - risk * 0.07),
+      risk: risk,
+    };
+  }
+
+  function calculateChassisSuspensionProfile(geometry) {
+    let risk = getChassisGeometryRisk(geometry);
+    return {
+      travelMultiplier: 1 - risk * 0.35,
+      dampingMultiplier: 1 + risk * 0.45,
+      risk: risk,
+    };
+  }
+
+  function getChassisGeometryRisk(geometry) {
+    geometry = geometry || {};
+    return clamp(Math.max(numberOr(geometry.thinness, 0), numberOr(geometry.clearanceRisk, 0)), 0, 1);
+  }
+
   function safeMass(entity, readBodyMass) {
     if (typeof readBodyMass !== "function") {
       return 0;
@@ -72,8 +185,16 @@
     return Number.isFinite(value) ? value : fallback;
   }
 
+  function clamp(value, min, max) {
+    return Math.min(max, Math.max(min, value));
+  }
+
   return {
+    calculateChassisGeometryCost: calculateChassisGeometryCost,
+    calculateChassisMaterialProfile: calculateChassisMaterialProfile,
+    calculateChassisSuspensionProfile: calculateChassisSuspensionProfile,
     createRunConfig: createRunConfig,
     deriveVehicleTelemetry: deriveVehicleTelemetry,
+    measureChassisGeometry: measureChassisGeometry,
   };
 });

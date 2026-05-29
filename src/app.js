@@ -535,26 +535,26 @@
    * ------------------------------------------------------------------------- */
   const carConstantsData = {
     "wheelCount": 2,
-    "wheelMinRadius": 0.2,
-    "wheelRadiusRange": 0.8,
-    "wheelMinDensity": 40,
-    "wheelDensityRange": 160,
-    "wheelMinFriction": 0.2,
-    "wheelFrictionRange": 1.8,
-    "chassisDensityRange": 500,
-    "chassisMinDensity": 30,
+    "wheelMinRadius": 0.25,
+    "wheelRadiusRange": 0.5,
+    "wheelMinDensity": 80,
+    "wheelDensityRange": 220,
+    "wheelMinFriction": 0.6,
+    "wheelFrictionRange": 1.4,
+    "chassisDensityRange": 650,
+    "chassisMinDensity": 90,
     "chassisMinAxis": 0.1,
     "chassisAxisRange": 1.7,
-    "suspensionMinTravel": 0.1,
-    "suspensionTravelRange": 0.9,
-    "suspensionMinStiffness": 1.25,
-    "suspensionStiffnessRange": 18.75,
-    "suspensionMinDamping": 0.18,
-    "suspensionDampingRange": 2.32,
-    "motorMinPower": 0.45,
-    "motorPowerRange": 2.05,
-    "motorMinGearing": 0.55,
-    "motorGearingRange": 2.45,
+    "suspensionMinTravel": 0.12,
+    "suspensionTravelRange": 0.43,
+    "suspensionMinStiffness": 5,
+    "suspensionStiffnessRange": 30,
+    "suspensionMinDamping": 0.8,
+    "suspensionDampingRange": 1.7,
+    "motorMinPower": 0.35,
+    "motorPowerRange": 1.45,
+    "motorMinGearing": 0.75,
+    "motorGearingRange": 1.65,
     "motorDensityCost": 95,
     "drivetrainNominalMass": 260,
     "drivetrainReferenceWheelRadius": 0.45
@@ -693,9 +693,19 @@
     let car_def = createInstance.applyTypes(constants.schema, normal_def)
     let instance = {};
     instance.joints = [];
-    let chassisDensity = calculateChassisDensityWithDrivetrainCost(car_def);
+    let chassisVertexList = createChassisVertexList(car_def.vertex_list);
+    let chassisGeometry = simulationCore.measureChassisGeometry(chassisVertexList);
+    let geometryDensityCost = simulationCore.calculateChassisGeometryCost(chassisGeometry);
+    let chassisDensity = calculateChassisDensityWithDrivetrainCost(car_def) + geometryDensityCost;
+    let chassisMaterialProfile = simulationCore.calculateChassisMaterialProfile(chassisGeometry);
+    let chassisSuspensionProfile = simulationCore.calculateChassisSuspensionProfile(chassisGeometry);
     instance.chassis = createChassis(
-      world, car_def.vertex_list, chassisDensity
+      world,
+      chassisVertexList,
+      chassisDensity,
+      chassisGeometry,
+      geometryDensityCost,
+      chassisMaterialProfile
     );
     let i;
 
@@ -718,7 +728,9 @@
 
     for (i = 0; i < wheelCount; i++) {
       let randvertex = instance.chassis.vertex_list[car_def.wheel_vertex[i]];
-      let travel = car_def.suspension_travel[i];
+      let baseTravel = car_def.suspension_travel[i];
+      let travel = baseTravel * chassisSuspensionProfile.travelMultiplier;
+      let dampingRatio = car_def.suspension_damping[i] * chassisSuspensionProfile.dampingMultiplier;
       let lowerTranslation = -travel * 0.65;
       let upperTranslation = travel * 0.35;
       let localAxis = vec2(0, 1);
@@ -732,10 +744,13 @@
         localAnchorA: cloneVec2(randvertex),
         localAxis: cloneVec2(localAxis),
         travel: travel,
+        baseTravel: baseTravel,
+        travelMultiplier: chassisSuspensionProfile.travelMultiplier,
         lowerTranslation: lowerTranslation,
         upperTranslation: upperTranslation,
         hertz: car_def.suspension_stiffness[i],
-        dampingRatio: car_def.suspension_damping[i],
+        dampingRatio: dampingRatio,
+        dampingMultiplier: chassisSuspensionProfile.dampingMultiplier,
       };
       instance.wheels[i].motor = motor;
       instance.joints.push(b2.createWheelJoint(
@@ -748,7 +763,7 @@
           localAxis: localAxis,
           enableSpring: true,
           hertz: car_def.suspension_stiffness[i],
-          dampingRatio: car_def.suspension_damping[i],
+          dampingRatio: dampingRatio,
           enableLimit: true,
           lowerTranslation: lowerTranslation,
           upperTranslation: upperTranslation,
@@ -809,8 +824,13 @@
     return clamp((value - min) / range, 0, 1);
   }
 
-  function createChassis(world, vertexGenes, density) {
-    let vertex_list = createChassisVertexList(vertexGenes);
+  function createChassis(world, vertexInput, density, geometry, geometryDensityCost, materialProfile) {
+    let vertex_list = new Array(vertexInput.length);
+    for (let i = 0; i < vertexInput.length; i++) {
+      vertex_list[i] = cloneVec2(vertexInput[i]);
+    }
+    let chassisGeometry = geometry || simulationCore.measureChassisGeometry(vertex_list);
+    let chassisMaterialProfile = materialProfile || simulationCore.calculateChassisMaterialProfile(chassisGeometry);
 
     let chassis = {
       body: b2.createBody(world, {
@@ -819,24 +839,28 @@
       }),
       vertex_list: vertex_list,
       triangles: [],
+      geometry: chassisGeometry,
+      geometryDensityCost: Number.isFinite(geometryDensityCost) ? geometryDensityCost : simulationCore.calculateChassisGeometryCost(chassisGeometry),
+      materialProfile: chassisMaterialProfile,
     };
 
     for (let i = 0; i < vertex_list.length; i++) {
-      createChassisPart(chassis, vertex_list[i], vertex_list[(i + 1) % vertex_list.length], density);
+      createChassisPart(chassis, vertex_list[i], vertex_list[(i + 1) % vertex_list.length], density, chassisMaterialProfile);
     }
 
     return chassis;
   }
 
 
-  function createChassisPart(chassis, vertex1, vertex2, density) {
+  function createChassisPart(chassis, vertex1, vertex2, density, materialProfile) {
     let vertex_list = createChassisTriangle(vertex1, vertex2);
-    let shape = createChassisShape(chassis.body, vertex_list, density);
+    let shape = createChassisShape(chassis.body, vertex_list, density, materialProfile);
 
     chassis.triangles.push({
       vertices: vertex_list,
       shape: shape,
       density: density,
+      materialProfile: materialProfile,
     });
   }
 
@@ -855,14 +879,16 @@
     return vertex_list;
   }
 
-  function createChassisShape(body, vertices, density) {
+  function createChassisShape(body, vertices, density, materialProfile) {
+    let friction = materialProfile && Number.isFinite(materialProfile.friction) ? materialProfile.friction : 10;
+    let restitution = materialProfile && Number.isFinite(materialProfile.restitution) ? materialProfile.restitution : 0.2;
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
         return b2.createPolygonShape(body, {
           vertices: vertices,
           density: density,
-          friction: 10,
-          restitution: 0.2,
+          friction: friction,
+          restitution: restitution,
           groupIndex: -1,
         });
       } catch (error) {
@@ -893,7 +919,7 @@
       radius: radius,
       density: density,
       friction: friction,
-      restitution: 0.2,
+      restitution: 0.05,
       groupIndex: -1,
     });
 
@@ -3095,9 +3121,14 @@
     let velocity = getBodyVelocity(carInstance.chassis);
     let score = getCurrentCarScore(carInfo);
     let idleRatio = carInfo.state ? carInfo.state.idle_timer / max_idle_timer : null;
-    let chassisDensity = calculateChassisDensityWithDrivetrainCost(typedDef);
+    let drivetrainDensity = calculateChassisDensityWithDrivetrainCost(typedDef);
     let baseDensity = typedDef.chassis_density[0];
-    let drivetrainDensityCost = chassisDensity - baseDensity;
+    let chassisGeometry = carInstance.chassis.geometry || simulationCore.measureChassisGeometry(carInstance.chassis.vertex_list);
+    let geometryDensityCost = Number.isFinite(carInstance.chassis.geometryDensityCost)
+      ? carInstance.chassis.geometryDensityCost
+      : simulationCore.calculateChassisGeometryCost(chassisGeometry);
+    let chassisDensity = drivetrainDensity + geometryDensityCost;
+    let drivetrainDensityCost = drivetrainDensity - baseDensity;
     let telemetry = simulationCore.deriveVehicleTelemetry(
       typedDef,
       carInstance,
@@ -3119,6 +3150,10 @@
       ["Mass", formatDetailNumber(readBodyMass(carInstance.chassis), 2)],
       ["Base density", formatDetailNumber(baseDensity, 2)],
       ["Effective density", formatDetailNumber(chassisDensity, 2)],
+      ["Geometry cost", formatDetailNumber(geometryDensityCost, 2)],
+      ["Size", formatDetailNumber(chassisGeometry.width, 2) + " x " + formatDetailNumber(chassisGeometry.height, 2)],
+      ["Aspect ratio", formatDetailNumber(chassisGeometry.aspectRatio, 2)],
+      ["Clearance risk", formatDetailPercent(chassisGeometry.clearanceRisk)],
       ["Triangles", carInstance.chassis.triangles.length.toString()]
     ];
     for (let i = 0; i < carInstance.chassis.vertex_list.length; i++) {
